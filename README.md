@@ -20,8 +20,8 @@ Diffusion 论文原仓库代码: https://github.com/openai/guided-diffusion/tree
 ✖ gaussian_diffusion.py
 ✖ image_datasets.py
 ✖ logger.py
-✖ losses.py
-✔(not verified) nn.py
+✔(Qiu not verified) losses.py
+✔(Qiu not verified) nn.py
 ✖ resample.py
 ✖ respace.py
 ✖ script_util.py
