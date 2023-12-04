@@ -17,13 +17,13 @@ Diffusion 论文原仓库代码: https://github.com/openai/guided-diffusion/tree
 ```assembly
 ✖ dist_util.py
 ✖ fp16_util.py
-✖ gaussian_diffusion.py
+✔(Qiu not verified) gaussian_diffusion.py
 ✖ image_datasets.py
-✖ logger.py
+✔(No need to change) logger.py
 ✔(Qiu not verified) losses.py
 ✔(Qiu not verified) nn.py
-✖ resample.py
-✖ respace.py
+✔(Qiu not verified) resample.py
+✔(Qiu not verified) respace.py
 ✖ script_util.py
 ✖ train_util.py
 ✖ unet.py

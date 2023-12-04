@@ -9,7 +9,7 @@ import enum
 import math
 
 import numpy as np
-import torch as th
+import jittor as jt
 
 from .nn import mean_flat
 from .losses import normal_kl, discretized_gaussian_log_likelihood
@@ -197,7 +197,7 @@ class GaussianDiffusion:
         :return: A noisy version of x_start.
         """
         if noise is None:
-            noise = th.randn_like(x_start)
+            noise = jt.randn_like(x_start)
         assert noise.shape == x_start.shape
         return (
             _extract_into_tensor(self.sqrt_alphas_cumprod, t, x_start.shape) * x_start
@@ -261,10 +261,10 @@ class GaussianDiffusion:
 
         if self.model_var_type in [ModelVarType.LEARNED, ModelVarType.LEARNED_RANGE]:
             assert model_output.shape == (B, C * 2, *x.shape[2:])
-            model_output, model_var_values = th.split(model_output, C, dim=1)
+            model_output, model_var_values = jt.split(model_output, C, dim=1)
             if self.model_var_type == ModelVarType.LEARNED:
                 model_log_variance = model_var_values
-                model_variance = th.exp(model_log_variance)
+                model_variance = jt.exp(model_log_variance)
             else:
                 min_log = _extract_into_tensor(
                     self.posterior_log_variance_clipped, t, x.shape
@@ -273,7 +273,7 @@ class GaussianDiffusion:
                 # The model_var_values is [-1, 1] for [min_var, max_var].
                 frac = (model_var_values + 1) / 2
                 model_log_variance = frac * max_log + (1 - frac) * min_log
-                model_variance = th.exp(model_log_variance)
+                model_variance = jt.exp(model_log_variance)
         else:
             model_variance, model_log_variance = {
                 # for fixedlarge, we set the initial (log-)variance like so
@@ -427,7 +427,7 @@ class GaussianDiffusion:
             denoised_fn=denoised_fn,
             model_kwargs=model_kwargs,
         )
-        noise = th.randn_like(x)
+        noise = jt.randn_like(x)
         nonzero_mask = (
             (t != 0).float().view(-1, *([1] * (len(x.shape) - 1)))
         )  # no noise when t == 0
@@ -435,7 +435,7 @@ class GaussianDiffusion:
             out["mean"] = self.condition_mean(
                 cond_fn, out, x, t, model_kwargs=model_kwargs
             )
-        sample = out["mean"] + nonzero_mask * th.exp(0.5 * out["log_variance"]) * noise
+        sample = out["mean"] + nonzero_mask * jt.exp(0.5 * out["log_variance"]) * noise
         return {"sample": sample, "pred_xstart": out["pred_xstart"]}
 
     def p_sample_loop(
@@ -510,7 +510,7 @@ class GaussianDiffusion:
         if noise is not None:
             img = noise
         else:
-            img = th.randn(*shape, device=device)
+            img = jt.randn(*shape, device=device)
         indices = list(range(self.num_timesteps))[::-1]
 
         if progress:
@@ -520,8 +520,8 @@ class GaussianDiffusion:
             indices = tqdm(indices)
 
         for i in indices:
-            t = th.tensor([i] * shape[0], device=device)
-            with th.no_grad():
+            t = jt.var([i] * shape[0], device=device)
+            with jt.no_grad():
                 out = self.p_sample(
                     model,
                     img,
@@ -569,14 +569,14 @@ class GaussianDiffusion:
         alpha_bar_prev = _extract_into_tensor(self.alphas_cumprod_prev, t, x.shape)
         sigma = (
             eta
-            * th.sqrt((1 - alpha_bar_prev) / (1 - alpha_bar))
-            * th.sqrt(1 - alpha_bar / alpha_bar_prev)
+            * jt.sqrt((1 - alpha_bar_prev) / (1 - alpha_bar))
+            * jt.sqrt(1 - alpha_bar / alpha_bar_prev)
         )
         # Equation 12.
-        noise = th.randn_like(x)
+        noise = jt.randn_like(x)
         mean_pred = (
-            out["pred_xstart"] * th.sqrt(alpha_bar_prev)
-            + th.sqrt(1 - alpha_bar_prev - sigma ** 2) * eps
+            out["pred_xstart"] * jt.sqrt(alpha_bar_prev)
+            + jt.sqrt(1 - alpha_bar_prev - sigma ** 2) * eps
         )
         nonzero_mask = (
             (t != 0).float().view(-1, *([1] * (len(x.shape) - 1)))
@@ -616,8 +616,8 @@ class GaussianDiffusion:
 
         # Equation 12. reversed
         mean_pred = (
-            out["pred_xstart"] * th.sqrt(alpha_bar_next)
-            + th.sqrt(1 - alpha_bar_next) * eps
+            out["pred_xstart"] * jt.sqrt(alpha_bar_next)
+            + jt.sqrt(1 - alpha_bar_next) * eps
         )
 
         return {"sample": mean_pred, "pred_xstart": out["pred_xstart"]}
@@ -681,7 +681,7 @@ class GaussianDiffusion:
         if noise is not None:
             img = noise
         else:
-            img = th.randn(*shape, device=device)
+            img = jt.randn(*shape, device=device)
         indices = list(range(self.num_timesteps))[::-1]
 
         if progress:
@@ -691,8 +691,8 @@ class GaussianDiffusion:
             indices = tqdm(indices)
 
         for i in indices:
-            t = th.tensor([i] * shape[0], device=device)
-            with th.no_grad():
+            t = jt.var([i] * shape[0], device=device)
+            with jt.no_grad():
                 out = self.ddim_sample(
                     model,
                     img,
@@ -738,7 +738,7 @@ class GaussianDiffusion:
 
         # At the first timestep return the decoder NLL,
         # otherwise return KL(q(x_{t-1}|x_t,x_0) || p(x_{t-1}|x_t))
-        output = th.where((t == 0), decoder_nll, kl)
+        output = jt.where((t == 0), decoder_nll, kl)
         return {"output": output, "pred_xstart": out["pred_xstart"]}
 
     def training_losses(self, model, x_start, t, model_kwargs=None, noise=None):
@@ -757,7 +757,7 @@ class GaussianDiffusion:
         if model_kwargs is None:
             model_kwargs = {}
         if noise is None:
-            noise = th.randn_like(x_start)
+            noise = jt.randn_like(x_start)
         x_t = self.q_sample(x_start, t, noise=noise)
 
         terms = {}
@@ -782,10 +782,10 @@ class GaussianDiffusion:
             ]:
                 B, C = x_t.shape[:2]
                 assert model_output.shape == (B, C * 2, *x_t.shape[2:])
-                model_output, model_var_values = th.split(model_output, C, dim=1)
+                model_output, model_var_values = jt.split(model_output, C, dim=1)
                 # Learn the variance using the variational bound, but don't let
                 # it affect our mean prediction.
-                frozen_out = th.cat([model_output.detach(), model_var_values], dim=1)
+                frozen_out = jt.cat([model_output.detach(), model_var_values], dim=1)
                 terms["vb"] = self._vb_terms_bpd(
                     model=lambda *args, r=frozen_out: r,
                     x_start=x_start,
@@ -827,7 +827,7 @@ class GaussianDiffusion:
         :return: a batch of [N] KL values (in bits), one per batch element.
         """
         batch_size = x_start.shape[0]
-        t = th.tensor([self.num_timesteps - 1] * batch_size, device=x_start.device)
+        t = jt.tensor([self.num_timesteps - 1] * batch_size, device=x_start.device)
         qt_mean, _, qt_log_variance = self.q_mean_variance(x_start, t)
         kl_prior = normal_kl(
             mean1=qt_mean, logvar1=qt_log_variance, mean2=0.0, logvar2=0.0
@@ -859,11 +859,11 @@ class GaussianDiffusion:
         xstart_mse = []
         mse = []
         for t in list(range(self.num_timesteps))[::-1]:
-            t_batch = th.tensor([t] * batch_size, device=device)
-            noise = th.randn_like(x_start)
+            t_batch = jt.var([t] * batch_size, device=device)
+            noise = jt.randn_like(x_start)
             x_t = self.q_sample(x_start=x_start, t=t_batch, noise=noise)
             # Calculate VLB term at the current timestep
-            with th.no_grad():
+            with jt.no_grad():
                 out = self._vb_terms_bpd(
                     model,
                     x_start=x_start,
@@ -877,9 +877,9 @@ class GaussianDiffusion:
             eps = self._predict_eps_from_xstart(x_t, t_batch, out["pred_xstart"])
             mse.append(mean_flat((eps - noise) ** 2))
 
-        vb = th.stack(vb, dim=1)
-        xstart_mse = th.stack(xstart_mse, dim=1)
-        mse = th.stack(mse, dim=1)
+        vb = jt.stack(vb, dim=1)
+        xstart_mse = jt.stack(xstart_mse, dim=1)
+        mse = jt.stack(mse, dim=1)
 
         prior_bpd = self._prior_bpd(x_start)
         total_bpd = vb.sum(dim=1) + prior_bpd
@@ -902,7 +902,7 @@ def _extract_into_tensor(arr, timesteps, broadcast_shape):
                             dimension equal to the length of timesteps.
     :return: a tensor of shape [batch_size, 1, ...] where the shape has K dims.
     """
-    res = th.from_numpy(arr).to(device=timesteps.device)[timesteps].float()
+    res = jt.array(arr).to(device=timesteps.device)[timesteps].float()
     while len(res.shape) < len(broadcast_shape):
         res = res[..., None]
     return res.expand(broadcast_shape)
