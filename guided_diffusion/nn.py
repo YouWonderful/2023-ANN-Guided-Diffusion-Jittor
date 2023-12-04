@@ -4,19 +4,57 @@ Various utilities for neural networks.
 
 import math
 
-import torch as th
-import torch.nn as nn
+import jittor as jt
+from jittor import nn
+from jittor import init
 
+# Jittor doesn't have AvgPool1d
+class AvgPool1d(nn.Module):
+    def __init__(self, kernel_size, stride=None, padding=0, ceil_mode=False, count_include_pad=True):
+        super().__init__()
+        self.kernel_size = kernel_size
+        self.stride = stride if stride is not None else kernel_size
+        self.padding = padding
+        self.ceil_mode = ceil_mode
+        self.count_include_pad = count_include_pad
+    
+    def execute(self, x):
+        # ref: https://pytorch.org/docs/stable/generated/torch.nn.AvgPool1d.html
+        # Calculate output size
+        input_size = x.size(2)
+        output_size = (input_size + 2 * self.padding - self.kernel_size) // self.stride + 1
+        
+        # Pad input tensor
+        x = nn.pad(x, (self.padding, self.padding))
+        
+        # Unfold input tensor and perform average pooling
+        unfolded_input = nn.unfold(x.unsqueeze(0), self.kernel_size, self.stride)
+        unfolded_input = unfolded_input.view(1, x.size(1), self.kernel_size, -1)
+        
+        # Calculate average
+        if self.count_include_pad:
+            divisor = self.kernel_size
+        else:
+            divisor = unfolded_input.sum(2)
+            divisor[divisor == 0] = 1  # Avoid division by zero
+            divisor = divisor.unsqueeze(2)
+        
+        output = unfolded_input.sum(dim=2) / divisor
+        
+        # Reshape the result tensor
+        output = output.view(1, x.size(1), output_size, -1)
+        
+        return output
 
 # PyTorch 1.7 has SiLU, but we support PyTorch 1.5.
 class SiLU(nn.Module):
-    def forward(self, x):
-        return x * th.sigmoid(x)
+    def execute(self, x):
+        return x * jt.sigmoid(x)
 
 
 class GroupNorm32(nn.GroupNorm):
-    def forward(self, x):
-        return super().forward(x.float()).type(x.dtype)
+    def execute(self, x):
+        return super().execute(x.float()).type(x.dtype)
 
 
 def conv_nd(dims, *args, **kwargs):
@@ -44,7 +82,7 @@ def avg_pool_nd(dims, *args, **kwargs):
     Create a 1D, 2D, or 3D average pooling module.
     """
     if dims == 1:
-        return nn.AvgPool1d(*args, **kwargs)
+        return AvgPool1d(*args, **kwargs)
     elif dims == 2:
         return nn.AvgPool2d(*args, **kwargs)
     elif dims == 3:
@@ -111,13 +149,13 @@ def timestep_embedding(timesteps, dim, max_period=10000):
     :return: an [N x dim] Tensor of positional embeddings.
     """
     half = dim // 2
-    freqs = th.exp(
-        -math.log(max_period) * th.arange(start=0, end=half, dtype=th.float32) / half
+    freqs = jt.exp(
+        -math.log(max_period) * jt.arange(start=0, end=half, dtype=jt.float32) / half
     ).to(device=timesteps.device)
     args = timesteps[:, None].float() * freqs[None]
-    embedding = th.cat([th.cos(args), th.sin(args)], dim=-1)
+    embedding = jt.cat([jt.cos(args), jt.sin(args)], dim=-1)
     if dim % 2:
-        embedding = th.cat([embedding, th.zeros_like(embedding[:, :1])], dim=-1)
+        embedding = jt.cat([embedding, jt.zeros_like(embedding[:, :1])], dim=-1)
     return embedding
 
 
@@ -139,26 +177,27 @@ def checkpoint(func, inputs, params, flag):
         return func(*inputs)
 
 
-class CheckpointFunction(th.autograd.Function):
+class CheckpointFunction(jt.Function):
     @staticmethod
-    def forward(ctx, run_function, length, *args):
+    def execute(ctx, run_function, length, *args):
         ctx.run_function = run_function
         ctx.input_tensors = list(args[:length])
         ctx.input_params = list(args[length:])
-        with th.no_grad():
+        with jt.no_grad():
             output_tensors = ctx.run_function(*ctx.input_tensors)
         return output_tensors
 
     @staticmethod
     def backward(ctx, *output_grads):
         ctx.input_tensors = [x.detach().requires_grad_(True) for x in ctx.input_tensors]
-        with th.enable_grad():
+        with jt.enable_grad():
             # Fixes a bug where the first op in run_function modifies the
             # Tensor storage in place, which is not allowed for detach()'d
             # Tensors.
             shallow_copies = [x.view_as(x) for x in ctx.input_tensors]
             output_tensors = ctx.run_function(*shallow_copies)
-        input_grads = th.autograd.grad(
+        # Jittor is auto-grad
+        input_grads = jt.grad(
             output_tensors,
             ctx.input_tensors + ctx.input_params,
             output_grads,
