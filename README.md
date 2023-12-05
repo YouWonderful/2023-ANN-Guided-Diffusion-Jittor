@@ -15,7 +15,7 @@ Diffusion 论文原仓库代码: https://github.com/openai/guided-diffusion/tree
 **./evaluations/**
 
 ```assembly
-evaluator.py
+✔(You not verified) evaluator.py
 ```
 
 **./Guided Diffusion/**
