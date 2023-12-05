@@ -12,10 +12,16 @@ Diffusion 论文原仓库代码: https://github.com/openai/guided-diffusion/tree
 
 ### Files needed to be converted
 
+**./evaluations/**
+
+```assembly
+evaluator.py
+```
+
 **./Guided Diffusion/**
 
 ```assembly
-✖ dist_util.py
+✖✖✖(用不到) dist_util.py
 ✖ fp16_util.py
 ✔(Qiu not verified) gaussian_diffusion.py
 ✖ image_datasets.py
@@ -24,7 +30,7 @@ Diffusion 论文原仓库代码: https://github.com/openai/guided-diffusion/tree
 ✔(Qiu not verified) nn.py
 ✔(Qiu not verified) resample.py
 ✔(Qiu not verified) respace.py
-✖ script_util.py
+✔(本来就不需要改) script_util.py
 ✖ train_util.py
 ✖ unet.py
 ```
@@ -32,12 +38,12 @@ Diffusion 论文原仓库代码: https://github.com/openai/guided-diffusion/tree
 **./scripts**
 
 ```assembly
-✖ classifier_sample.py
-✖ classifier_train.py
-✖ image_nll.py
-✖ image_sample.py
-✖ image_train.py
-✖ super_res_sample.py
-✖ super_res_train.py
+✔(You not verified) classifier_sample.py
+✔(You not verified) classifier_train.py
+✔(You not verified) image_nll.py
+✔(You not verified) image_sample.py
+✔(You not verified) image_train.py
+✔(You not verified) super_res_sample.py
+✔(You not verified) super_res_train.py
 ```
 

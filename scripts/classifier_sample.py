@@ -7,11 +7,10 @@ import argparse
 import os
 
 import numpy as np
-import torch as th
-import torch.distributed as dist
-import torch.nn.functional as F
+import jittor as jt
+import jittor.nn as nn
 
-from guided_diffusion import dist_util, logger
+from guided_diffusion import logger
 from guided_diffusion.script_util import (
     NUM_CLASSES,
     model_and_diffusion_defaults,
@@ -26,7 +25,6 @@ from guided_diffusion.script_util import (
 def main():
     args = create_argparser().parse_args()
 
-    dist_util.setup_dist()
     logger.configure()
 
     logger.log("creating model and diffusion...")
@@ -34,9 +32,9 @@ def main():
         **args_to_dict(args, model_and_diffusion_defaults().keys())
     )
     model.load_state_dict(
-        dist_util.load_state_dict(args.model_path, map_location="cpu")
+        jt.load(args.model_path)
     )
-    model.to(dist_util.dev())
+    model.to("cuda")
     if args.use_fp16:
         model.convert_to_fp16()
     model.eval()
@@ -44,21 +42,22 @@ def main():
     logger.log("loading classifier...")
     classifier = create_classifier(**args_to_dict(args, classifier_defaults().keys()))
     classifier.load_state_dict(
-        dist_util.load_state_dict(args.classifier_path, map_location="cpu")
+        jt.load(args.classifier_path)
     )
-    classifier.to(dist_util.dev())
+    classifier.to("cuda")
     if args.classifier_use_fp16:
         classifier.convert_to_fp16()
     classifier.eval()
 
     def cond_fn(x, t, y=None):
         assert y is not None
-        with th.enable_grad():
+        with jt.enable_grad():
             x_in = x.detach().requires_grad_(True)
             logits = classifier(x_in, t)
-            log_probs = F.log_softmax(logits, dim=-1)
+            log_probs = nn.log_softmax(logits, dim=-1)
             selected = log_probs[range(len(logits)), y.view(-1)]
-            return th.autograd.grad(selected.sum(), x_in)[0] * args.classifier_scale
+            # maybe false
+            return jt.grad(selected.sum(), x_in)[0] * args.classifier_scale
 
     def model_fn(x, t, y=None):
         assert y is not None
@@ -69,8 +68,8 @@ def main():
     all_labels = []
     while len(all_images) * args.batch_size < args.num_samples:
         model_kwargs = {}
-        classes = th.randint(
-            low=0, high=NUM_CLASSES, size=(args.batch_size,), device=dist_util.dev()
+        classes =jt.randint(
+            low=0, high=NUM_CLASSES, size=(args.batch_size,), device="cuda"
         )
         model_kwargs["y"] = classes
         sample_fn = (
@@ -82,31 +81,25 @@ def main():
             clip_denoised=args.clip_denoised,
             model_kwargs=model_kwargs,
             cond_fn=cond_fn,
-            device=dist_util.dev(),
+            device="cuda",
         )
-        sample = ((sample + 1) * 127.5).clamp(0, 255).to(th.uint8)
+        sample = ((sample + 1) * 127.5).clamp(0, 255).to(jt.uint8)
         sample = sample.permute(0, 2, 3, 1)
         sample = sample.contiguous()
 
-        gathered_samples = [th.zeros_like(sample) for _ in range(dist.get_world_size())]
-        dist.all_gather(gathered_samples, sample)  # gather not supported with NCCL
-        all_images.extend([sample.cpu().numpy() for sample in gathered_samples])
-        gathered_labels = [th.zeros_like(classes) for _ in range(dist.get_world_size())]
-        dist.all_gather(gathered_labels, classes)
-        all_labels.extend([labels.cpu().numpy() for labels in gathered_labels])
+        all_images.extend([sample.cpu().numpy()])
+        all_labels.extend([classes.cpu().numpy()])
         logger.log(f"created {len(all_images) * args.batch_size} samples")
 
     arr = np.concatenate(all_images, axis=0)
     arr = arr[: args.num_samples]
     label_arr = np.concatenate(all_labels, axis=0)
     label_arr = label_arr[: args.num_samples]
-    if dist.get_rank() == 0:
-        shape_str = "x".join([str(x) for x in arr.shape])
-        out_path = os.path.join(logger.get_dir(), f"samples_{shape_str}.npz")
-        logger.log(f"saving to {out_path}")
-        np.savez(out_path, arr, label_arr)
+    shape_str = "x".join([str(x) for x in arr.shape])
+    out_path = os.path.join(logger.get_dir(), f"samples_{shape_str}.npz")
+    logger.log(f"saving to {out_path}")
+    np.savez(out_path, arr, label_arr)
 
-    dist.barrier()
     logger.log("sampling complete")
 
 

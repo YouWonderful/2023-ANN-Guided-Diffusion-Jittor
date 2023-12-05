@@ -4,7 +4,7 @@ Train a diffusion model on images.
 
 import argparse
 
-from guided_diffusion import dist_util, logger
+from guided_diffusion import logger
 from guided_diffusion.image_datasets import load_data
 from guided_diffusion.resample import create_named_schedule_sampler
 from guided_diffusion.script_util import (
@@ -19,14 +19,13 @@ from guided_diffusion.train_util import TrainLoop
 def main():
     args = create_argparser().parse_args()
 
-    dist_util.setup_dist()
     logger.configure()
 
     logger.log("creating model and diffusion...")
     model, diffusion = create_model_and_diffusion(
         **args_to_dict(args, model_and_diffusion_defaults().keys())
     )
-    model.to(dist_util.dev())
+    model.to("cuda")
     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion)
 
     logger.log("creating data loader...")

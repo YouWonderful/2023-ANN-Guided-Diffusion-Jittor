@@ -6,9 +6,9 @@ import argparse
 import os
 
 import numpy as np
-import torch.distributed as dist
+import jittor as jt
 
-from guided_diffusion import dist_util, logger
+from guided_diffusion import logger
 from guided_diffusion.image_datasets import load_data
 from guided_diffusion.script_util import (
     model_and_diffusion_defaults,
@@ -21,7 +21,6 @@ from guided_diffusion.script_util import (
 def main():
     args = create_argparser().parse_args()
 
-    dist_util.setup_dist()
     logger.configure()
 
     logger.log("creating model and diffusion...")
@@ -29,9 +28,9 @@ def main():
         **args_to_dict(args, model_and_diffusion_defaults().keys())
     )
     model.load_state_dict(
-        dist_util.load_state_dict(args.model_path, map_location="cpu")
+        jt.load(args.model_path)
     )
-    model.to(dist_util.dev())
+    model.to("cuda")
     model.eval()
 
     logger.log("creating data loader...")
@@ -53,32 +52,28 @@ def run_bpd_evaluation(model, diffusion, data, num_samples, clip_denoised):
     num_complete = 0
     while num_complete < num_samples:
         batch, model_kwargs = next(data)
-        batch = batch.to(dist_util.dev())
-        model_kwargs = {k: v.to(dist_util.dev()) for k, v in model_kwargs.items()}
+        batch = batch.to("cuda")
+        model_kwargs = {k: v.to("cuda") for k, v in model_kwargs.items()}
         minibatch_metrics = diffusion.calc_bpd_loop(
             model, batch, clip_denoised=clip_denoised, model_kwargs=model_kwargs
         )
 
         for key, term_list in all_metrics.items():
-            terms = minibatch_metrics[key].mean(dim=0) / dist.get_world_size()
-            dist.all_reduce(terms)
+            terms = minibatch_metrics[key].mean(dim=0)
             term_list.append(terms.detach().cpu().numpy())
 
         total_bpd = minibatch_metrics["total_bpd"]
-        total_bpd = total_bpd.mean() / dist.get_world_size()
-        dist.all_reduce(total_bpd)
+        total_bpd = total_bpd.mean()
         all_bpd.append(total_bpd.item())
-        num_complete += dist.get_world_size() * batch.shape[0]
+        num_complete += batch.shape[0]
 
         logger.log(f"done {num_complete} samples: bpd={np.mean(all_bpd)}")
 
-    if dist.get_rank() == 0:
-        for name, terms in all_metrics.items():
-            out_path = os.path.join(logger.get_dir(), f"{name}_terms.npz")
-            logger.log(f"saving {name} terms to {out_path}")
-            np.savez(out_path, np.mean(np.stack(terms), axis=0))
+    for name, terms in all_metrics.items():
+        out_path = os.path.join(logger.get_dir(), f"{name}_terms.npz")
+        logger.log(f"saving {name} terms to {out_path}")
+        np.savez(out_path, np.mean(np.stack(terms), axis=0))
 
-    dist.barrier()
     logger.log("evaluation complete")
 
 
