@@ -5,7 +5,7 @@ from PIL import Image
 import blobfile as bf
 from mpi4py import MPI
 import numpy as np
-from torch.utils.data import DataLoader, Dataset
+import jittor.dataset as Data
 
 
 def load_data(
@@ -56,11 +56,11 @@ def load_data(
         random_flip=random_flip,
     )
     if deterministic:
-        loader = DataLoader(
+        loader = Data.DataLoader(
             dataset, batch_size=batch_size, shuffle=False, num_workers=1, drop_last=True
         )
     else:
-        loader = DataLoader(
+        loader = Data.DataLoader(
             dataset, batch_size=batch_size, shuffle=True, num_workers=1, drop_last=True
         )
     while True:
@@ -79,7 +79,7 @@ def _list_image_files_recursively(data_dir):
     return results
 
 
-class ImageDataset(Dataset):
+class ImageDataset(Data.Dataset):
     def __init__(
         self,
         resolution,
