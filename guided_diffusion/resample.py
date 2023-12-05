@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 import jittor as jt
-import torch.distributed as dist
+# import torch.distributed as dist
 
 
 def create_named_schedule_sampler(name, diffusion):
@@ -80,27 +80,21 @@ class LossAwareSampler(ScheduleSampler):
         :param local_ts: an integer Tensor of timesteps.
         :param local_losses: a 1D Tensor of losses.
         """
-        batch_sizes = [
-            jt.var([0], dtype=jt.int32, device=local_ts.device)
-            for _ in range(dist.get_world_size())
-        ]
-        dist.all_gather(
-            batch_sizes,
-            jt.var([len(local_ts)], dtype=jt.int32, device=local_ts.device),
-        )
+        batch_size = jt.var([len(local_ts)], dtype=jt.int32)
 
         # Pad all_gather batches to be the maximum batch size.
-        batch_sizes = [x.item() for x in batch_sizes]
-        max_bs = max(batch_sizes)
+        # batch_size = batch_size.item()
+        # max_bs = max(batch_sizes)
 
-        timestep_batches = [jt.zeros(max_bs).to(local_ts) for bs in batch_sizes]
-        loss_batches = [jt.zeros(max_bs).to(local_losses) for bs in batch_sizes]
-        dist.all_gather(timestep_batches, local_ts)
-        dist.all_gather(loss_batches, local_losses)
-        timesteps = [
-            x.item() for y, bs in zip(timestep_batches, batch_sizes) for x in y[:bs]
-        ]
-        losses = [x.item() for y, bs in zip(loss_batches, batch_sizes) for x in y[:bs]]
+        timestep_batches = jt.zeros(batch_size).to(local_ts)
+        loss_batches = jt.zeros(batch_size).to(local_losses)
+        # dist.all_gather(timestep_batches, local_ts)
+        timestep_batches = local_ts
+        # dist.all_gather(loss_batches, local_losses)
+        loss_batch = local_losses
+        
+        timesteps = x.item() for x in timestep_batches[:batch_size]
+        losses = [x.item() for y, bs in zip(loss_batches, batch_size) for x in y[:bs]]
         self.update_with_all_losses(timesteps, losses)
 
     @abstractmethod
