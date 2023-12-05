@@ -32,7 +32,6 @@ def main():
     model, diffusion = create_classifier_and_diffusion(
         **args_to_dict(args, classifier_and_diffusion_defaults().keys())
     )
-    model.to("cuda")
     if args.noised:
         schedule_sampler = create_named_schedule_sampler(
             args.schedule_sampler, diffusion
@@ -85,9 +84,8 @@ def main():
 
     def forward_backward_log(data_loader, prefix="train"):
         batch, extra = next(data_loader)
-        labels = extra["y"].to("cuda")
+        labels = extra["y"]
 
-        batch = batch.to("cuda")
         # Noisy images
         if args.noised:
             t, _ = schedule_sampler.sample(batch.shape[0], "cuda")

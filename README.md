@@ -31,7 +31,7 @@ evaluator.py
 ✔(Qiu not verified.) resample.py
 ✔(Qiu not verified.) respace.py
 ✔(本来就不需要改) script_util.py
-✖ train_util.py
+✔(You not verified) train_util.py
 ✔(Qiu not verified) unet.py
 ```
 

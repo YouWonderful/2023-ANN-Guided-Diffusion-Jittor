@@ -31,7 +31,6 @@ def main():
     model.load_state_dict(
         jt.load(args.model_path)
     )
-    model.to("cuda")
     if args.use_fp16:
         model.convert_to_fp16()
     model.eval()
@@ -43,7 +42,7 @@ def main():
     all_images = []
     while len(all_images) * args.batch_size < args.num_samples:
         model_kwargs = next(data)
-        model_kwargs = {k: v.to("cuda") for k, v in model_kwargs.items()}
+        model_kwargs = {k: v for k, v in model_kwargs.items()}
         sample = diffusion.p_sample_loop(
             model,
             (args.batch_size, 3, args.large_size, args.large_size),

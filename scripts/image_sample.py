@@ -32,7 +32,6 @@ def main():
     model.load_state_dict(
         jt.load(args.model_path)
     )
-    model.to("cuda")
     if args.use_fp16:
         model.convert_to_fp16()
     model.eval()

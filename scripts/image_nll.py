@@ -30,7 +30,6 @@ def main():
     model.load_state_dict(
         jt.load(args.model_path)
     )
-    model.to("cuda")
     model.eval()
 
     logger.log("creating data loader...")
@@ -52,8 +51,7 @@ def run_bpd_evaluation(model, diffusion, data, num_samples, clip_denoised):
     num_complete = 0
     while num_complete < num_samples:
         batch, model_kwargs = next(data)
-        batch = batch.to("cuda")
-        model_kwargs = {k: v.to("cuda") for k, v in model_kwargs.items()}
+        model_kwargs = {k: v for k, v in model_kwargs.items()}
         minibatch_metrics = diffusion.calc_bpd_loop(
             model, batch, clip_denoised=clip_denoised, model_kwargs=model_kwargs
         )
