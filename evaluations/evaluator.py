@@ -13,7 +13,9 @@ from typing import Iterable, Optional, Tuple
 
 import numpy as np
 import requests
-import tensorflow.compat.v1 as tf
+import tensorflow._api.v2.compat.v1 as tf
+tf.disable_v2_behavior()
+
 from scipy import linalg
 from tqdm.auto import tqdm
 

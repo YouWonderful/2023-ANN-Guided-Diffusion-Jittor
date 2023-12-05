@@ -3,7 +3,6 @@ import random
 
 from PIL import Image
 import blobfile as bf
-from mpi4py import MPI
 import numpy as np
 import jittor.dataset as Data
 
@@ -50,8 +49,6 @@ def load_data(
         image_size,
         all_files,
         classes=classes,
-        shard=MPI.COMM_WORLD.Get_rank(),
-        num_shards=MPI.COMM_WORLD.Get_size(),
         random_crop=random_crop,
         random_flip=random_flip,
     )
