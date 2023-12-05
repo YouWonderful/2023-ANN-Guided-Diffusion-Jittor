@@ -34,7 +34,6 @@ def main():
     model.load_state_dict(
         jt.load(args.model_path)
     )
-    model.to("cuda")
     if args.use_fp16:
         model.convert_to_fp16()
     model.eval()
@@ -44,7 +43,6 @@ def main():
     classifier.load_state_dict(
         jt.load(args.classifier_path)
     )
-    classifier.to("cuda")
     if args.classifier_use_fp16:
         classifier.convert_to_fp16()
     classifier.eval()
