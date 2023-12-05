@@ -153,9 +153,9 @@ def timestep_embedding(timesteps, dim, max_period=10000):
         -math.log(max_period) * jt.arange(start=0, end=half, dtype=jt.float32) / half
     ).to(device=timesteps.device)
     args = timesteps[:, None].float() * freqs[None]
-    embedding = jt.cat([jt.cos(args), jt.sin(args)], dim=-1)
+    embedding = jt.concat([jt.cos(args), jt.sin(args)], dim=-1)
     if dim % 2:
-        embedding = jt.cat([embedding, jt.zeros_like(embedding[:, :1])], dim=-1)
+        embedding = jt.concat([embedding, jt.zeros_like(embedding[:, :1])], dim=-1)
     return embedding
 
 

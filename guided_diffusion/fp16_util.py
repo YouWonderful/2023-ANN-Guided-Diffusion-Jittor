@@ -3,14 +3,53 @@ Helpers to train with 16-bit precision.
 """
 
 import numpy as np
-import torch as th
-import torch.nn as nn
-from torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors
+import jittor as jt
+import jittor.nn as nn
+
 
 from . import logger
 
 INITIAL_LOG_LOSS_SCALE = 20.0
 
+
+def _flatten_dense_tensors(tensors):
+    """
+    Flatten a list of dense tensors into a single 1D tensor.
+
+    Args:
+        tensors (List[torch.Tensor]): List of dense tensors.
+
+    Returns:
+        torch.Tensor: Flattened tensor.
+    """
+    total_size = sum(t.numel() for t in tensors)
+    flattened = jt.empty(total_size, dtype=tensors[0].dtype)
+    current_pos = 0
+    for tensor in tensors:
+        numel = tensor.numel()
+        flattened[current_pos:current_pos+numel] = tensor.view(-1)
+        current_pos += numel
+    return flattened
+
+def _unflatten_dense_tensors(flattened, tensor_shapes):
+    """
+    Unflatten a 1D tensor into a list of dense tensors with specified shapes.
+
+    Args:
+        flattened (torch.Tensor): 1D tensor to be unflattened.
+        tensor_shapes (List[torch.Size]): List of shapes for each tensor.
+
+    Returns:
+        List[torch.Tensor]: List of unflattened tensors.
+    """
+    tensors = []
+    current_pos = 0
+    for shape in tensor_shapes:
+        numel = shape.numel()
+        tensor = flattened[current_pos:current_pos+numel].view(shape)
+        tensors.append(tensor)
+        current_pos += numel
+    return tensors
 
 def convert_module_to_f16(l):
     """
@@ -142,7 +181,7 @@ def param_grad_or_zeros(param):
     if param.grad is not None:
         return param.grad.data.detach()
     else:
-        return th.zeros_like(param)
+        return jt.zeros_like(param)
 
 
 class MixedPrecisionTrainer:
@@ -173,20 +212,20 @@ class MixedPrecisionTrainer:
     def zero_grad(self):
         zero_grad(self.model_params)
 
-    def backward(self, loss: th.Tensor):
+    def backward(self, loss: jt.Var):
         if self.use_fp16:
             loss_scale = 2 ** self.lg_loss_scale
             (loss * loss_scale).backward()
         else:
             loss.backward()
 
-    def optimize(self, opt: th.optim.Optimizer):
+    def optimize(self, opt: jt.optim.Optimizer):
         if self.use_fp16:
             return self._optimize_fp16(opt)
         else:
             return self._optimize_normal(opt)
 
-    def _optimize_fp16(self, opt: th.optim.Optimizer):
+    def _optimize_fp16(self, opt: jt.optim.Optimizer):
         logger.logkv_mean("lg_loss_scale", self.lg_loss_scale)
         model_grads_to_master_grads(self.param_groups_and_shapes, self.master_params)
         grad_norm, param_norm = self._compute_norms(grad_scale=2 ** self.lg_loss_scale)
@@ -207,7 +246,7 @@ class MixedPrecisionTrainer:
         self.lg_loss_scale += self.fp16_scale_growth
         return True
 
-    def _optimize_normal(self, opt: th.optim.Optimizer):
+    def _optimize_normal(self, opt: jt.optim.Optimizer):
         grad_norm, param_norm = self._compute_norms()
         logger.logkv_mean("grad_norm", grad_norm)
         logger.logkv_mean("param_norm", param_norm)
@@ -218,10 +257,10 @@ class MixedPrecisionTrainer:
         grad_norm = 0.0
         param_norm = 0.0
         for p in self.master_params:
-            with th.no_grad():
-                param_norm += th.norm(p, p=2, dtype=th.float32).item() ** 2
+            with jt.no_grad():
+                param_norm += jt.norm(p, p=2, dtype=jt.float32).item() ** 2
                 if p.grad is not None:
-                    grad_norm += th.norm(p.grad, p=2, dtype=th.float32).item() ** 2
+                    grad_norm += jt.norm(p.grad, p=2, dtype=jt.float32).item() ** 2
         return np.sqrt(grad_norm) / grad_scale, np.sqrt(param_norm)
 
     def master_params_to_state_dict(self, master_params):

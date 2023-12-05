@@ -3,9 +3,8 @@ from abc import abstractmethod
 import math
 
 import numpy as np
-import torch as th
-import torch.nn as nn
-import torch.nn.functional as F
+import jittor as jt
+import jittor.nn as nn
 
 from .fp16_util import convert_module_to_f16, convert_module_to_f32
 from .nn import (
@@ -17,6 +16,37 @@ from .nn import (
     normalization,
     timestep_embedding,
 )
+
+def einsum(equation, *tensors):
+    subscripts_in, subscripts_out = equation.split("->")
+    subscripts_in = subscripts_in.split(",")
+
+    # Build a dictionary to map input and output subscripts to dimensions
+    subscript_dims = {}
+    for tensor, subscript_list in zip(tensors, subscripts_in):
+        for dim, subscript in enumerate(subscript_list):
+            subscript_dims[subscript] = subscript_dims.get(subscript, []) + [tensor.size(dim)]
+
+    # Determine dimensions of the output tensor
+    output_dims = [1] * len(subscripts_out)
+    for subscript in subscript_dims:
+        output_dims[subscripts_out.index(subscript)] = sum(subscript_dims[subscript])
+
+    # Create output tensor
+    result = jt.zeros(output_dims)
+
+    # Perform the contraction
+    for i, tensor in enumerate(tensors):
+        subscript_list_in = subscripts_in[i]
+        subscript_list_out = subscripts_out
+
+        # Permute dimensions of input tensor to match subscripts order
+        permuted_tensor = tensor.permute([subscript_list_in.index(sub) for sub in subscript_list_out])
+
+        # Add the permuted tensor to the result
+        result += permuted_tensor
+
+    return result
 
 
 class AttentionPool2d(nn.Module):
@@ -33,7 +63,7 @@ class AttentionPool2d(nn.Module):
     ):
         super().__init__()
         self.positional_embedding = nn.Parameter(
-            th.randn(embed_dim, spacial_dim ** 2 + 1) / embed_dim ** 0.5
+            jt.randn(embed_dim, spacial_dim ** 2 + 1) / embed_dim ** 0.5
         )
         self.qkv_proj = conv_nd(1, embed_dim, 3 * embed_dim, 1)
         self.c_proj = conv_nd(1, embed_dim, output_dim or embed_dim, 1)
@@ -43,7 +73,7 @@ class AttentionPool2d(nn.Module):
     def forward(self, x):
         b, c, *_spatial = x.shape
         x = x.reshape(b, c, -1)  # NC(HW)
-        x = th.cat([x.mean(dim=-1, keepdim=True), x], dim=-1)  # NC(HW+1)
+        x = jt.concat([x.mean(dim=-1, keepdim=True), x], dim=-1)  # NC(HW+1)
         x = x + self.positional_embedding[None, :, :].to(x.dtype)  # NC(HW+1)
         x = self.qkv_proj(x)
         x = self.attention(x)
@@ -100,11 +130,11 @@ class Upsample(nn.Module):
     def forward(self, x):
         assert x.shape[1] == self.channels
         if self.dims == 3:
-            x = F.interpolate(
+            x = nn.interpolate(
                 x, (x.shape[2], x.shape[3] * 2, x.shape[4] * 2), mode="nearest"
             )
         else:
-            x = F.interpolate(x, scale_factor=2, mode="nearest")
+            x = nn.interpolate(x, scale_factor=2, mode="nearest")
         if self.use_conv:
             x = self.conv(x)
         return x
@@ -247,7 +277,7 @@ class ResBlock(TimestepBlock):
             emb_out = emb_out[..., None]
         if self.use_scale_shift_norm:
             out_norm, out_rest = self.out_layers[0], self.out_layers[1:]
-            scale, shift = th.chunk(emb_out, 2, dim=1)
+            scale, shift = jt.chunk(emb_out, 2, dim=1)
             h = out_norm(h) * (1 + scale) + shift
             h = out_rest(h)
         else:
@@ -322,7 +352,7 @@ def count_flops_attn(model, _x, y):
     # The first computes the weight matrix, the second computes
     # the combination of the value vectors.
     matmul_ops = 2 * b * (num_spatial ** 2) * c
-    model.total_ops += th.DoubleTensor([matmul_ops])
+    model.total_ops += jt.float64([matmul_ops])
 
 
 class QKVAttentionLegacy(nn.Module):
@@ -346,11 +376,11 @@ class QKVAttentionLegacy(nn.Module):
         ch = width // (3 * self.n_heads)
         q, k, v = qkv.reshape(bs * self.n_heads, ch * 3, length).split(ch, dim=1)
         scale = 1 / math.sqrt(math.sqrt(ch))
-        weight = th.einsum(
+        weight = einsum(
             "bct,bcs->bts", q * scale, k * scale
         )  # More stable with f16 than dividing afterwards
-        weight = th.softmax(weight.float(), dim=-1).type(weight.dtype)
-        a = th.einsum("bts,bcs->bct", weight, v)
+        weight = nn.softmax(weight.float(), dim=-1).type(weight.dtype)
+        a = einsum("bts,bcs->bct", weight, v)
         return a.reshape(bs, -1, length)
 
     @staticmethod
@@ -379,13 +409,13 @@ class QKVAttention(nn.Module):
         ch = width // (3 * self.n_heads)
         q, k, v = qkv.chunk(3, dim=1)
         scale = 1 / math.sqrt(math.sqrt(ch))
-        weight = th.einsum(
+        weight = einsum(
             "bct,bcs->bts",
             (q * scale).view(bs * self.n_heads, ch, length),
             (k * scale).view(bs * self.n_heads, ch, length),
         )  # More stable with f16 than dividing afterwards
-        weight = th.softmax(weight.float(), dim=-1).type(weight.dtype)
-        a = th.einsum("bts,bcs->bct", weight, v.reshape(bs * self.n_heads, ch, length))
+        weight = nn.softmax(weight.float(), dim=-1).type(weight.dtype)
+        a = einsum("bts,bcs->bct", weight, v.reshape(bs * self.n_heads, ch, length))
         return a.reshape(bs, -1, length)
 
     @staticmethod
@@ -462,7 +492,7 @@ class UNetModel(nn.Module):
         self.conv_resample = conv_resample
         self.num_classes = num_classes
         self.use_checkpoint = use_checkpoint
-        self.dtype = th.float16 if use_fp16 else th.float32
+        self.dtype = jt.float16 if use_fp16 else jt.float32
         self.num_heads = num_heads
         self.num_head_channels = num_head_channels
         self.num_heads_upsample = num_heads_upsample
@@ -657,7 +687,7 @@ class UNetModel(nn.Module):
             hs.append(h)
         h = self.middle_block(h, emb)
         for module in self.output_blocks:
-            h = th.cat([h, hs.pop()], dim=1)
+            h = jt.concat([h, hs.pop()], dim=1)
             h = module(h, emb)
         h = h.type(x.dtype)
         return self.out(h)
@@ -675,8 +705,8 @@ class SuperResModel(UNetModel):
 
     def forward(self, x, timesteps, low_res=None, **kwargs):
         _, _, new_height, new_width = x.shape
-        upsampled = F.interpolate(low_res, (new_height, new_width), mode="bilinear")
-        x = th.cat([x, upsampled], dim=1)
+        upsampled = nn.interpolate(low_res, (new_height, new_width), mode="bilinear")
+        x = jt.concat([x, upsampled], dim=1)
         return super().forward(x, timesteps, **kwargs)
 
 
@@ -723,7 +753,7 @@ class EncoderUNetModel(nn.Module):
         self.channel_mult = channel_mult
         self.conv_resample = conv_resample
         self.use_checkpoint = use_checkpoint
-        self.dtype = th.float16 if use_fp16 else th.float32
+        self.dtype = jt.float16 if use_fp16 else jt.float32
         self.num_heads = num_heads
         self.num_head_channels = num_head_channels
         self.num_heads_upsample = num_heads_upsample
@@ -887,7 +917,7 @@ class EncoderUNetModel(nn.Module):
         h = self.middle_block(h, emb)
         if self.pool.startswith("spatial"):
             results.append(h.type(x.dtype).mean(dim=(2, 3)))
-            h = th.cat(results, axis=-1)
+            h = jt.concat(results, axis=-1)
             return self.out(h)
         else:
             h = h.type(x.dtype)

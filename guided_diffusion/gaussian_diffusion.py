@@ -785,7 +785,7 @@ class GaussianDiffusion:
                 model_output, model_var_values = jt.split(model_output, C, dim=1)
                 # Learn the variance using the variational bound, but don't let
                 # it affect our mean prediction.
-                frozen_out = jt.cat([model_output.detach(), model_var_values], dim=1)
+                frozen_out = jt.concat([model_output.detach(), model_var_values], dim=1)
                 terms["vb"] = self._vb_terms_bpd(
                     model=lambda *args, r=frozen_out: r,
                     x_start=x_start,
