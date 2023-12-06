@@ -10,6 +10,9 @@ import numpy as np
 import jittor as jt
 import jittor.nn as nn
 
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parents[1]))  # 将父级目录加入执行目录列表
 from guided_diffusion import logger
 from guided_diffusion.script_util import (
     NUM_CLASSES,

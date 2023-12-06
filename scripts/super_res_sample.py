@@ -10,6 +10,9 @@ import blobfile as bf
 import numpy as np
 import jittor as jt
 
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parents[1]))  # 将父级目录加入执行目录列表
 from guided_diffusion import logger
 from guided_diffusion.script_util import (
     sr_model_and_diffusion_defaults,

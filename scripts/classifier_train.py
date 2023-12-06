@@ -10,6 +10,9 @@ import jittor as jt
 import jittor.nn as nn
 from jittor.optim import AdamW
 
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parents[1]))  # 将父级目录加入执行目录列表
 from guided_diffusion import logger
 from guided_diffusion.fp16_util import MixedPrecisionTrainer
 from guided_diffusion.image_datasets import load_data

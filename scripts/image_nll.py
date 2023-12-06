@@ -8,6 +8,9 @@ import os
 import numpy as np
 import jittor as jt
 
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parents[1]))  # 将父级目录加入执行目录列表
 from guided_diffusion import logger
 from guided_diffusion.image_datasets import load_data
 from guided_diffusion.script_util import (
