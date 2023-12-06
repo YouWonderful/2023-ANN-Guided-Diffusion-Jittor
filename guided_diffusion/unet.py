@@ -15,6 +15,7 @@ from .nn import (
     zero_module,
     normalization,
     timestep_embedding,
+    SiLU
 )
 
 def einsum(equation, *tensors):
@@ -211,7 +212,7 @@ class ResBlock(TimestepBlock):
 
         self.in_layers = nn.Sequential(
             normalization(channels),
-            nn.SiLU(),
+            SiLU(),
             conv_nd(dims, channels, self.out_channels, 3, padding=1),
         )
 
@@ -227,7 +228,7 @@ class ResBlock(TimestepBlock):
             self.h_upd = self.x_upd = nn.Identity()
 
         self.emb_layers = nn.Sequential(
-            nn.SiLU(),
+            SiLU(),
             linear(
                 emb_channels,
                 2 * self.out_channels if use_scale_shift_norm else self.out_channels,
@@ -235,7 +236,7 @@ class ResBlock(TimestepBlock):
         )
         self.out_layers = nn.Sequential(
             normalization(self.out_channels),
-            nn.SiLU(),
+            SiLU(),
             nn.Dropout(p=dropout),
             zero_module(
                 conv_nd(dims, self.out_channels, self.out_channels, 3, padding=1)
@@ -500,7 +501,7 @@ class UNetModel(nn.Module):
         time_embed_dim = model_channels * 4
         self.time_embed = nn.Sequential(
             linear(model_channels, time_embed_dim),
-            nn.SiLU(),
+            SiLU(),
             linear(time_embed_dim, time_embed_dim),
         )
 
@@ -641,7 +642,7 @@ class UNetModel(nn.Module):
 
         self.out = nn.Sequential(
             normalization(ch),
-            nn.SiLU(),
+            SiLU(),
             zero_module(conv_nd(dims, input_ch, out_channels, 3, padding=1)),
         )
 
@@ -761,7 +762,7 @@ class EncoderUNetModel(nn.Module):
         time_embed_dim = model_channels * 4
         self.time_embed = nn.Sequential(
             linear(model_channels, time_embed_dim),
-            nn.SiLU(),
+            SiLU(),
             linear(time_embed_dim, time_embed_dim),
         )
 
@@ -854,7 +855,7 @@ class EncoderUNetModel(nn.Module):
         if pool == "adaptive":
             self.out = nn.Sequential(
                 normalization(ch),
-                nn.SiLU(),
+                SiLU(),
                 nn.AdaptiveAvgPool2d((1, 1)),
                 zero_module(conv_nd(dims, ch, out_channels, 1)),
                 nn.Flatten(),
@@ -863,7 +864,7 @@ class EncoderUNetModel(nn.Module):
             assert num_head_channels != -1
             self.out = nn.Sequential(
                 normalization(ch),
-                nn.SiLU(),
+                SiLU(),
                 AttentionPool2d(
                     (image_size // ds), ch, num_head_channels, out_channels
                 ),
@@ -878,7 +879,7 @@ class EncoderUNetModel(nn.Module):
             self.out = nn.Sequential(
                 nn.Linear(self._feature_size, 2048),
                 normalization(2048),
-                nn.SiLU(),
+                SiLU(),
                 nn.Linear(2048, self.out_channels),
             )
         else:
