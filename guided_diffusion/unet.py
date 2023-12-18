@@ -18,38 +18,6 @@ from .nn import (
     SiLU
 )
 
-def einsum(equation, *tensors):
-    subscripts_in, subscripts_out = equation.split("->")
-    subscripts_in = subscripts_in.split(",")
-
-    # Build a dictionary to map input and output subscripts to dimensions
-    subscript_dims = {}
-    for tensor, subscript_list in zip(tensors, subscripts_in):
-        for dim, subscript in enumerate(subscript_list):
-            subscript_dims[subscript] = subscript_dims.get(subscript, []) + [tensor.size(dim)]
-
-    # Determine dimensions of the output tensor
-    output_dims = [1] * len(subscripts_out)
-    for subscript in subscript_dims:
-        output_dims[subscripts_out.index(subscript)] = sum(subscript_dims[subscript])
-
-    # Create output tensor
-    result = jt.zeros(output_dims)
-
-    # Perform the contraction
-    for i, tensor in enumerate(tensors):
-        subscript_list_in = subscripts_in[i]
-        subscript_list_out = subscripts_out
-
-        # Permute dimensions of input tensor to match subscripts order
-        permuted_tensor = tensor.permute([subscript_list_in.index(sub) for sub in subscript_list_out])
-
-        # Add the permuted tensor to the result
-        result += permuted_tensor
-
-    return result
-
-
 class AttentionPool2d(nn.Module):
     """
     Adapted from CLIP: https://github.com/openai/CLIP/blob/main/clip/model.py
@@ -71,7 +39,7 @@ class AttentionPool2d(nn.Module):
         self.num_heads = embed_dim // num_heads_channels
         self.attention = QKVAttention(self.num_heads)
 
-    def forward(self, x):
+    def execute(self, x):
         b, c, *_spatial = x.shape
         x = x.reshape(b, c, -1)  # NC(HW)
         x = jt.concat([x.mean(dim=-1, keepdim=True), x], dim=-1)  # NC(HW+1)
@@ -88,7 +56,7 @@ class TimestepBlock(nn.Module):
     """
 
     @abstractmethod
-    def forward(self, x, emb):
+    def execute(self, x, emb):
         """
         Apply the module to `x` given `emb` timestep embeddings.
         """
@@ -100,7 +68,7 @@ class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
     support it as an extra input.
     """
 
-    def forward(self, x, emb):
+    def execute(self, x, emb):
         for layer in self:
             if isinstance(layer, TimestepBlock):
                 x = layer(x, emb)
@@ -128,7 +96,7 @@ class Upsample(nn.Module):
         if use_conv:
             self.conv = conv_nd(dims, self.channels, self.out_channels, 3, padding=1)
 
-    def forward(self, x):
+    def execute(self, x):
         assert x.shape[1] == self.channels
         if self.dims == 3:
             x = nn.interpolate(
@@ -166,7 +134,7 @@ class Downsample(nn.Module):
             assert self.channels == self.out_channels
             self.op = avg_pool_nd(dims, kernel_size=stride, stride=stride)
 
-    def forward(self, x):
+    def execute(self, x):
         assert x.shape[1] == self.channels
         return self.op(x)
 
@@ -252,7 +220,7 @@ class ResBlock(TimestepBlock):
         else:
             self.skip_connection = conv_nd(dims, channels, self.out_channels, 1)
 
-    def forward(self, x, emb):
+    def execute(self, x, emb):
         """
         Apply the block to a Tensor, conditioned on a timestep embedding.
 
@@ -267,20 +235,23 @@ class ResBlock(TimestepBlock):
     def _forward(self, x, emb):
         if self.updown:
             in_rest, in_conv = self.in_layers[:-1], self.in_layers[-1]
-            h = in_rest(x)
+            h = x
+            for ly in in_rest:
+                h = ly(h)
             h = self.h_upd(h)
             x = self.x_upd(x)
             h = in_conv(h)
         else:
             h = self.in_layers(x)
-        emb_out = self.emb_layers(emb).type(h.dtype)
+        emb_out = self.emb_layers(emb).unary(op=h.dtype)
         while len(emb_out.shape) < len(h.shape):
             emb_out = emb_out[..., None]
         if self.use_scale_shift_norm:
             out_norm, out_rest = self.out_layers[0], self.out_layers[1:]
             scale, shift = jt.chunk(emb_out, 2, dim=1)
             h = out_norm(h) * (1 + scale) + shift
-            h = out_rest(h)
+            for ly in out_rest:
+                h = ly(h)
         else:
             h = h + emb_out
             h = self.out_layers(h)
@@ -324,7 +295,7 @@ class AttentionBlock(nn.Module):
 
         self.proj_out = zero_module(conv_nd(1, channels, channels, 1))
 
-    def forward(self, x):
+    def execute(self, x):
         return checkpoint(self._forward, (x,), self.parameters(), True)
 
     def _forward(self, x):
@@ -365,7 +336,7 @@ class QKVAttentionLegacy(nn.Module):
         super().__init__()
         self.n_heads = n_heads
 
-    def forward(self, qkv):
+    def execute(self, qkv):
         """
         Apply QKV attention.
 
@@ -377,11 +348,11 @@ class QKVAttentionLegacy(nn.Module):
         ch = width // (3 * self.n_heads)
         q, k, v = qkv.reshape(bs * self.n_heads, ch * 3, length).split(ch, dim=1)
         scale = 1 / math.sqrt(math.sqrt(ch))
-        weight = einsum(
+        weight = jt.linalg.einsum(
             "bct,bcs->bts", q * scale, k * scale
         )  # More stable with f16 than dividing afterwards
-        weight = nn.softmax(weight.float(), dim=-1).type(weight.dtype)
-        a = einsum("bts,bcs->bct", weight, v)
+        weight = nn.softmax(weight.float(), dim=-1).unary(weight.dtype)
+        a = jt.linalg.einsum("bts,bcs->bct", weight, v)
         return a.reshape(bs, -1, length)
 
     @staticmethod
@@ -398,7 +369,7 @@ class QKVAttention(nn.Module):
         super().__init__()
         self.n_heads = n_heads
 
-    def forward(self, qkv):
+    def execute(self, qkv):
         """
         Apply QKV attention.
 
@@ -410,13 +381,13 @@ class QKVAttention(nn.Module):
         ch = width // (3 * self.n_heads)
         q, k, v = qkv.chunk(3, dim=1)
         scale = 1 / math.sqrt(math.sqrt(ch))
-        weight = einsum(
+        weight = jt.linalg.einsum(
             "bct,bcs->bts",
             (q * scale).view(bs * self.n_heads, ch, length),
             (k * scale).view(bs * self.n_heads, ch, length),
         )  # More stable with f16 than dividing afterwards
-        weight = nn.softmax(weight.float(), dim=-1).type(weight.dtype)
-        a = einsum("bts,bcs->bct", weight, v.reshape(bs * self.n_heads, ch, length))
+        weight = nn.softmax(weight.float(), dim=-1).unary(weight.dtype)
+        a = jt.linalg.einsum("bts,bcs->bct", weight, v.reshape(bs * self.n_heads, ch, length))
         return a.reshape(bs, -1, length)
 
     @staticmethod
@@ -662,7 +633,7 @@ class UNetModel(nn.Module):
         self.middle_block.apply(convert_module_to_f32)
         self.output_blocks.apply(convert_module_to_f32)
 
-    def forward(self, x, timesteps, y=None):
+    def execute(self, x, timesteps, y=None):
         """
         Apply the model to an input batch.
 
@@ -682,7 +653,7 @@ class UNetModel(nn.Module):
             assert y.shape == (x.shape[0],)
             emb = emb + self.label_emb(y)
 
-        h = x.type(self.dtype)
+        h = x.unary(self.dtype)
         for module in self.input_blocks:
             h = module(h, emb)
             hs.append(h)
@@ -690,7 +661,7 @@ class UNetModel(nn.Module):
         for module in self.output_blocks:
             h = jt.concat([h, hs.pop()], dim=1)
             h = module(h, emb)
-        h = h.type(x.dtype)
+        h = h.unary(x.dtype)
         return self.out(h)
 
 
@@ -704,11 +675,11 @@ class SuperResModel(UNetModel):
     def __init__(self, image_size, in_channels, *args, **kwargs):
         super().__init__(image_size, in_channels * 2, *args, **kwargs)
 
-    def forward(self, x, timesteps, low_res=None, **kwargs):
+    def execute(self, x, timesteps, low_res=None, **kwargs):
         _, _, new_height, new_width = x.shape
         upsampled = nn.interpolate(low_res, (new_height, new_width), mode="bilinear")
         x = jt.concat([x, upsampled], dim=1)
-        return super().forward(x, timesteps, **kwargs)
+        return super().execute(x, timesteps, **kwargs)
 
 
 class EncoderUNetModel(nn.Module):
@@ -899,7 +870,7 @@ class EncoderUNetModel(nn.Module):
         self.input_blocks.apply(convert_module_to_f32)
         self.middle_block.apply(convert_module_to_f32)
 
-    def forward(self, x, timesteps):
+    def execute(self, x, timesteps):
         """
         Apply the model to an input batch.
 
@@ -910,16 +881,16 @@ class EncoderUNetModel(nn.Module):
         emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
 
         results = []
-        h = x.type(self.dtype)
+        h = x.unary(op=self.dtype)
         for module in self.input_blocks:
             h = module(h, emb)
             if self.pool.startswith("spatial"):
-                results.append(h.type(x.dtype).mean(dim=(2, 3)))
+                results.append(h.unary(x.dtype).mean(dims=(2, 3)))
         h = self.middle_block(h, emb)
         if self.pool.startswith("spatial"):
-            results.append(h.type(x.dtype).mean(dim=(2, 3)))
+            results.append(h.unary(x.dtype).mean(dims=(2, 3)))
             h = jt.concat(results, axis=-1)
             return self.out(h)
         else:
-            h = h.type(x.dtype)
+            h = h.unary(x.dtype)
             return self.out(h)

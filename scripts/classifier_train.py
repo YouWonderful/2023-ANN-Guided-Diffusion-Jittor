@@ -114,9 +114,7 @@ def main():
             del losses
             loss = loss.mean()
             if loss.requires_grad:
-                if i == 0:
-                    mp_trainer.zero_grad()
-                mp_trainer.backward(loss * len(sub_batch) / len(batch))
+                opt.step(loss * len(sub_batch) / len(batch))
 
     for step in range(args.iterations - resume_step):
         logger.logkv("step", step + resume_step)
@@ -130,10 +128,9 @@ def main():
         mp_trainer.optimize(opt)
         if val_data is not None and not step % args.eval_interval:
             with jt.no_grad():
-                with model.no_sync():
-                    model.eval()
-                    forward_backward_log(val_data, prefix="val")
-                    model.train()
+                model.eval()
+                forward_backward_log(val_data, prefix="val")
+                model.train()
         if not step % args.log_interval:
             logger.dumpkvs()
         if (

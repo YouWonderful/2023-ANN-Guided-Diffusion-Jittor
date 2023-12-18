@@ -140,7 +140,7 @@ class TrainLoop:
         self.log_step()
 
     def forward_backward(self, batch, cond):
-        self.mp_trainer.zero_grad()
+        self.mp_trainer.zero_grad(self.opt)
         for i in range(0, batch.shape[0], self.microbatch):
             micro = batch[i : i + self.microbatch]
             micro_cond = {
@@ -168,7 +168,7 @@ class TrainLoop:
             log_loss_dict(
                 self.diffusion, t, {k: v * weights for k, v in losses.items()}
             )
-            self.mp_trainer.backward(loss)
+            self.mp_trainer.backward(loss, self.opt)
 
     def _update_ema(self):
         for rate, params in zip(self.ema_rate, self.ema_params):
@@ -194,18 +194,18 @@ class TrainLoop:
                 filename = f"model{(self.step+self.resume_step):06d}.pt"
             else:
                 filename = f"ema_{rate}_{(self.step+self.resume_step):06d}.pt"
-            with bf.BlobFile(bf.join(get_blob_logdir(), filename), "wb") as f:
-                jt.save(state_dict, f)
+            # with bf.BlobFile(bf.join(get_blob_logdir(), filename), "wb") as f:
+            jt.save(state_dict, bf.join(get_blob_logdir(), filename))
 
         save_checkpoint(0, self.mp_trainer.master_params)
         for rate, params in zip(self.ema_rate, self.ema_params):
             save_checkpoint(rate, params)
 
-        with bf.BlobFile(
-            bf.join(get_blob_logdir(), f"opt{(self.step+self.resume_step):06d}.pt"),
-            "wb",
-        ) as f:
-            jt.save(self.opt.state_dict(), f)
+        # with bf.BlobFile(
+        #     bf.join(get_blob_logdir(), f"opt{(self.step+self.resume_step):06d}.pt"),
+        #     "wb",
+        # ) as f:
+        jt.save(self.opt.state_dict(), bf.join(get_blob_logdir(), f"opt{(self.step+self.resume_step):06d}.pt"))
 
 
 

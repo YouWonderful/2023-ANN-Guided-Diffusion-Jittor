@@ -12,6 +12,12 @@ from . import logger
 INITIAL_LOG_LOSS_SCALE = 20.0
 
 
+def norm_like_torch(x, p):
+    output = x
+    for dim in x.shape:
+        output = jt.norm(output, p=p)
+    return output
+
 def _flatten_dense_tensors(tensors):
     """
     Flatten a list of dense tensors into a single 1D tensor.
@@ -55,10 +61,10 @@ def convert_module_to_f16(l):
     """
     Convert primitive modules to float16.
     """
-    if isinstance(l, (nn.Conv1d, nn.Conv2d, nn.Conv3d)):
-        l.weight.data = l.weight.data.half()
-        if l.bias is not None:
-            l.bias.data = l.bias.data.half()
+    # if isinstance(l, (nn.Conv1d, nn.Conv2d, nn.Conv3d)):
+    #     l.weight.data = l.weight.data.float16()
+    #     if l.bias is not None:
+    #         l.bias.data = l.bias.data.float16()
 
 
 def convert_module_to_f32(l):
@@ -169,12 +175,13 @@ def zero_master_grads(master_params):
         param.grad = None
 
 
-def zero_grad(model_params):
-    for param in model_params:
-        # Taken from https://pytorch.org/docs/stable/_modules/torch/optim/optimizer.html#Optimizer.add_param_group
-        if param.grad is not None:
-            param.grad.detach_()
-            param.grad.zero_()
+def zero_grad(model_params, opt):
+    opt.zero_grad()
+    # for param in model_params:
+    #     # Taken from https://pytorch.org/docs/stable/_modules/torch/optim/optimizer.html#Optimizer.add_param_group
+    #     if param.grad is not None:
+    #         param.grad.detach_()
+    #         param.grad.zero_()
 
 
 def param_grad_or_zeros(param):
@@ -209,15 +216,17 @@ class MixedPrecisionTrainer:
             self.master_params = make_master_params(self.param_groups_and_shapes)
             self.model.convert_to_fp16()
 
-    def zero_grad(self):
-        zero_grad(self.model_params)
+    def zero_grad(self, opt):
+        zero_grad(self.model_params, opt)
 
-    def backward(self, loss: jt.Var):
+    def backward(self, loss: jt.Var, opt):
         if self.use_fp16:
             loss_scale = 2 ** self.lg_loss_scale
-            (loss * loss_scale).backward()
+            opt.backward(loss * loss_scale)
+            opt.step()
         else:
-            loss.backward()
+            opt.backward(loss)
+            opt.step()
 
     def optimize(self, opt: jt.optim.Optimizer):
         if self.use_fp16:
@@ -247,20 +256,20 @@ class MixedPrecisionTrainer:
         return True
 
     def _optimize_normal(self, opt: jt.optim.Optimizer):
-        grad_norm, param_norm = self._compute_norms()
+        grad_norm, param_norm = self._compute_norms(opt)
         logger.logkv_mean("grad_norm", grad_norm)
         logger.logkv_mean("param_norm", param_norm)
         opt.step()
         return True
 
-    def _compute_norms(self, grad_scale=1.0):
+    def _compute_norms(self, opt: jt.optim.Optimizer, grad_scale=1.0):
         grad_norm = 0.0
         param_norm = 0.0
         for p in self.master_params:
             with jt.no_grad():
-                param_norm += jt.norm(p, p=2, dtype=jt.float32).item() ** 2
-                if p.grad is not None:
-                    grad_norm += jt.norm(p.grad, p=2, dtype=jt.float32).item() ** 2
+                param_norm += norm_like_torch(p, p=2).item() ** 2
+                if p.opt_grad(opt) is not None:
+                    grad_norm += norm_like_torch(p.opt_grad(opt), p=2).item() ** 2
         return np.sqrt(grad_norm) / grad_scale, np.sqrt(param_norm)
 
     def master_params_to_state_dict(self, master_params):

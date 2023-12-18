@@ -18,6 +18,8 @@ from guided_diffusion.script_util import (
 )
 from guided_diffusion.train_util import TrainLoop
 
+# import jittor as jt
+# jt.flags.lazy_execution=0
 
 def main():
     args = create_argparser().parse_args()

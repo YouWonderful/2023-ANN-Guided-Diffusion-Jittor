@@ -54,7 +54,7 @@ class SiLU(nn.Module):
 
 class GroupNorm32(nn.GroupNorm):
     def execute(self, x):
-        return super().execute(x.float()).type(x.dtype)
+        return super().execute(x.float()).unary(op=x.dtype)
 
 
 def conv_nd(dims, *args, **kwargs):
@@ -100,7 +100,7 @@ def update_ema(target_params, source_params, rate=0.99):
     :param rate: the EMA rate (closer to 1 means slower).
     """
     for targ, src in zip(target_params, source_params):
-        targ.detach().mul_(rate).add_(src, alpha=1 - rate)
+        targ.mul_(rate).mul_(1 - rate).add_(src) # alpha=1 - rate
 
 
 def zero_module(module):
@@ -108,7 +108,7 @@ def zero_module(module):
     Zero out the parameters of a module and return it.
     """
     for p in module.parameters():
-        p.detach().zero_()
+        p.zero_()
     return module
 
 
@@ -117,7 +117,7 @@ def scale_module(module, scale):
     Scale the parameters of a module and return it.
     """
     for p in module.parameters():
-        p.detach().mul_(scale)
+        p.mul_(scale)
     return module
 
 
@@ -125,7 +125,7 @@ def mean_flat(tensor):
     """
     Take the mean over all non-batch dimensions.
     """
-    return tensor.mean(dim=list(range(1, len(tensor.shape))))
+    return tensor.mean(dims=list(range(1, len(tensor.shape))))
 
 
 def normalization(channels):
@@ -151,7 +151,7 @@ def timestep_embedding(timesteps, dim, max_period=10000):
     half = dim // 2
     freqs = jt.exp(
         -math.log(max_period) * jt.arange(start=0, end=half, dtype=jt.float32) / half
-    ).to(device=timesteps.device)
+    )
     args = timesteps[:, None].float() * freqs[None]
     embedding = jt.concat([jt.cos(args), jt.sin(args)], dim=-1)
     if dim % 2:
@@ -170,40 +170,38 @@ def checkpoint(func, inputs, params, flag):
                    explicitly take as arguments.
     :param flag: if False, disable gradient checkpointing.
     """
-    if flag:
-        args = tuple(inputs) + tuple(params)
-        return CheckpointFunction.apply(func, len(inputs), *args)
-    else:
-        return func(*inputs)
+    # if flag:
+    #     args = tuple(inputs) + tuple(params)
+    #     return CheckpointFunction.apply(func, len(inputs), *args)
+    # else:
+    return func(*inputs)
 
 
 class CheckpointFunction(jt.Function):
-    @staticmethod
-    def execute(ctx, run_function, length, *args):
-        ctx.run_function = run_function
-        ctx.input_tensors = list(args[:length])
-        ctx.input_params = list(args[length:])
+    def execute(self, run_function, length, *args):
+        self.run_function = run_function
+        self.input_tensors = list(args[:length])
+        self.input_params = list(args[length:])
         with jt.no_grad():
-            output_tensors = ctx.run_function(*ctx.input_tensors)
+            output_tensors = self.run_function(*self.input_tensors)
         return output_tensors
 
-    @staticmethod
-    def backward(ctx, *output_grads):
-        ctx.input_tensors = [x.detach().requires_grad_(True) for x in ctx.input_tensors]
+    def grad(self, *output_grads):
+        self.input_tensors = [x for x in self.input_tensors]
         with jt.enable_grad():
             # Fixes a bug where the first op in run_function modifies the
             # Tensor storage in place, which is not allowed for detach()'d
             # Tensors.
-            shallow_copies = [x.view_as(x) for x in ctx.input_tensors]
-            output_tensors = ctx.run_function(*shallow_copies)
+            shallow_copies = [x.view_as(x) for x in self.input_tensors]
+            output_tensors = self.run_function(*shallow_copies)
         # Jittor is auto-grad
         input_grads = jt.grad(
             output_tensors,
-            ctx.input_tensors + ctx.input_params,
-            output_grads,
-            allow_unused=True,
+            self.input_tensors + self.input_params,
+            # output_grads,
+            # allow_unused=True,
         )
-        del ctx.input_tensors
-        del ctx.input_params
+        del self.input_tensors
+        del self.input_params
         del output_tensors
         return (None, None) + input_grads

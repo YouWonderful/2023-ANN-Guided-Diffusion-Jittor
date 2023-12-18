@@ -39,7 +39,7 @@ class ScheduleSampler(ABC):
         The weights needn't be normalized, but must be positive.
         """
 
-    def sample(self, batch_size, device):
+    def sample(self, batch_size):
         """
         Importance-sample timesteps for a batch.
 
