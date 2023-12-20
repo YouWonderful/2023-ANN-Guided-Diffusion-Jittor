@@ -510,7 +510,7 @@ class GaussianDiffusion:
         if noise is not None:
             img = noise
         else:
-            img = jt.randn(*shape, device=device)
+            img = jt.randn(*shape)
         indices = list(range(self.num_timesteps))[::-1]
 
         if progress:
@@ -520,7 +520,7 @@ class GaussianDiffusion:
             indices = tqdm(indices)
 
         for i in indices:
-            t = jt.var([i] * shape[0], device=device)
+            t = jt.array([i] * shape[0])
             with jt.no_grad():
                 out = self.p_sample(
                     model,

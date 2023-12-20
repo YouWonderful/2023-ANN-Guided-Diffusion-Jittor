@@ -9,6 +9,8 @@ import os
 import numpy as np
 import jittor as jt
 import jittor.nn as nn
+import blobfile as bf
+import io
 
 import sys
 from pathlib import Path
@@ -24,6 +26,7 @@ from guided_diffusion.script_util import (
     args_to_dict,
 )
 
+jt.flags.use_cuda = 1
 
 def main():
     args = create_argparser().parse_args()
@@ -53,10 +56,10 @@ def main():
     def cond_fn(x, t, y=None):
         assert y is not None
         with jt.enable_grad():
-            x_in = x.detach().requires_grad_(True)
+            x_in = x.detach()
             logits = classifier(x_in, t)
             log_probs = nn.log_softmax(logits, dim=-1)
-            selected = log_probs[range(len(logits)), y.view(-1)]
+            selected = log_probs[0:len(logits), y.view(-1)]
             # maybe false
             return jt.grad(selected.sum(), x_in)[0] * args.classifier_scale
 
@@ -70,7 +73,7 @@ def main():
     while len(all_images) * args.batch_size < args.num_samples:
         model_kwargs = {}
         classes =jt.randint(
-            low=0, high=NUM_CLASSES, size=(args.batch_size,), device="cuda"
+            low=0, high=NUM_CLASSES, shape=(args.batch_size,)
         )
         model_kwargs["y"] = classes
         sample_fn = (
@@ -107,8 +110,8 @@ def main():
 def create_argparser():
     defaults = dict(
         clip_denoised=True,
-        num_samples=10000,
-        batch_size=16,
+        num_samples=100,
+        batch_size=1,
         use_ddim=False,
         model_path="",
         classifier_path="",

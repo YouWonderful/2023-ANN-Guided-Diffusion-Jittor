@@ -61,10 +61,10 @@ def convert_module_to_f16(l):
     """
     Convert primitive modules to float16.
     """
-    # if isinstance(l, (nn.Conv1d, nn.Conv2d, nn.Conv3d)):
-    #     l.weight.data = l.weight.data.float16()
-    #     if l.bias is not None:
-    #         l.bias.data = l.bias.data.float16()
+    if isinstance(l, (nn.Conv1d, nn.Conv2d, nn.Conv3d)):
+        l.weight = jt.array(l.weight.data.astype(np.float16))
+        if l.bias is not None:
+            l.bias = jt.array(l.bias.data.astype(np.float16))
 
 
 def convert_module_to_f32(l):
@@ -72,9 +72,9 @@ def convert_module_to_f32(l):
     Convert primitive modules to float32, undoing convert_module_to_f16().
     """
     if isinstance(l, (nn.Conv1d, nn.Conv2d, nn.Conv3d)):
-        l.weight.data = l.weight.data.float()
+        l.weight = jt.array(l.weight.data.astype(np.float32))
         if l.bias is not None:
-            l.bias.data = l.bias.data.float()
+            l.bias = jt.array(l.bias.data.astype(np.float32))
 
 
 def make_master_params(param_groups_and_shapes):
@@ -86,7 +86,7 @@ def make_master_params(param_groups_and_shapes):
     for param_group, shape in param_groups_and_shapes:
         master_param = nn.Parameter(
             _flatten_dense_tensors(
-                [param.detach().float() for (_, param) in param_group]
+                [jt.float32(param.detach()) for (_, param) in param_group]
             ).view(shape)
         )
         master_param.requires_grad = True

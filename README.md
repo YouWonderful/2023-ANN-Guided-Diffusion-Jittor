@@ -50,10 +50,14 @@ Diffusion 论文原仓库代码: https://github.com/openai/guided-diffusion/tree
 #### Train command
 ```sh
 # set global setting
-TRAIN_FLAGS="--iterations 300000 --anneal_lr True --batch_size 256 --lr 3e-4 --save_interval 10000 --weight_decay 0.05"
-CLASSIFIER_FLAGS="--image_size 64 --classifier_attention_resolutions 32,16,8 --classifier_depth 2 --classifier_width 128 --classifier_pool attention --classifier_resblock_updown True --classifier_use_scale_shift_norm True"
+TRAIN_FLAGS="--iterations 300000 --anneal_lr True --batch_size 12 --lr 3e-4 --save_interval 10000 --weight_decay 0.05"
+CLASSIFIER_FLAGS="--image_size 256 --classifier_attention_resolutions 32,16,8 --classifier_depth 2 --classifier_width 128 --classifier_pool attention --classifier_resblock_updown True --classifier_use_scale_shift_norm True"
+MODEL_FLAGS="--attention_resolutions 32,16,8 --class_cond True --diffusion_steps 1000 --image_size 256 --learn_sigma True --noise_schedule linear --num_channels 256 --num_head_channels 64 --num_res_blocks 2 --resblock_updown True --use_fp16 True --use_scale_shift_norm True"
+SAMPLE_FLAGS="--batch_size 1 --num_samples 100 --timestep_respacing 250"
 # train classifier
-python scripts/classifier_train.py --data_dir ./datasets/tiny-imagenet-200/train --val_data_dir ./datasets/tiny-imagenet-200/val $TRAIN_FLAGS $CLASSIFIER_FLAGS
+python scripts/classifier_train.py --data_dir ./datasets/train $TRAIN_FLAGS $CLASSIFIER_FLAGS
+# sample
+python ./scripts/classifier_sample.py $MODEL_FLAGS --classifier_scale 1.0 --classifier_path models/256x256_classifier.pt --model_path models/256x256_diffusion.pt $SAMPLE_FLAGS
 ```
 
 ## Jittor changed

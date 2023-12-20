@@ -91,10 +91,10 @@ def main():
 
         # Noisy images
         if args.noised:
-            t, _ = schedule_sampler.sample(batch.shape[0], "cuda")
+            t, _ = schedule_sampler.sample(batch.shape[0])
             batch = diffusion.q_sample(batch, t)
         else:
-            t = jt.zeros(batch.shape[0], dtype=jt.long, device="cuda")
+            t = jt.zeros(batch.shape[0], dtype=jt.long)
 
         for i, (sub_batch, sub_labels, sub_t) in enumerate(
             split_microbatches(args.microbatch, batch, labels, t)
@@ -176,7 +176,7 @@ def split_microbatches(microbatch, *args):
 
 def create_argparser():
     defaults = dict(
-        data_dir="",
+        data_dir="/root/2023-ann-diffussion-jittor/datasets/tiny-imagenet-200",
         val_data_dir="",
         noised=True,
         iterations=150000,

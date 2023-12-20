@@ -3,3 +3,4 @@ __pycache__/
 classify_image_graph_def.pb
 datasets/*
 !datasets/README.md
+models
