@@ -65,7 +65,6 @@ def sample(args:argparse.Namespace):
         img = img.reshape(args.clsnum, batch_size // args.clsnum, 3, 32, 32).contiguous()
         all_samples.extend([img.cpu()])
     samples = jt.concat(all_samples, dim = 1).reshape(args.genbatch * numloop, 3, 32, 32)
-    print(samples.shape)
     # save images
     if args.fid:
         samples = (samples * 255).clamp(0, 255).unary(jt.uint8)

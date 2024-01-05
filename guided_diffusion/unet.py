@@ -1049,3 +1049,167 @@ class EncoderUNetModel(nn.Module):
         else:
             h = h.unary(x.dtype)
             return self.out(h)
+        
+from abc import abstractmethod
+import math
+
+def timestep_embedding(timesteps:jt.Var, dim:int, max_period=10000) -> jt.Var:
+    """
+    Create sinusoidal timestep embeddings.
+
+    :param timesteps: a 1-D Tensor of N indices, one per batch element.
+                      These may be fractional.
+    :param dim: the dimension of the output.
+    :param max_period: controls the minimum frequency of the embeddings.
+    :return: an [N x dim] Tensor of positional embeddings.
+    """
+    half = dim // 2
+    freqs = jt.exp(
+        -math.log(max_period) * jt.arange(start=0, end=half, dtype=jt.float32) / half
+    )
+    args = timesteps[:, None].float() * freqs[None]
+    embedding = jt.cat([jt.cos(args), jt.sin(args)], dim=-1)
+    if dim % 2:
+        embedding = jt.cat([embedding, jt.zeros_like(embedding[:, :1])], dim=-1)
+    return embedding
+
+class ClassifierFreeUpsample(nn.Module):
+    """
+    an upsampling layer
+    """
+    def __init__(self, in_ch:int, out_ch:int):
+        super().__init__()
+        self.in_ch = in_ch
+        self.out_ch = out_ch
+        self.layer = nn.Conv2d(in_ch, out_ch, kernel_size = 3, stride = 1, padding = 1)
+    def execute(self, x:jt.Var) -> jt.Var:
+        assert x.shape[1] == self.in_ch, f'x and upsampling layer({self.in_ch}->{self.out_ch}) doesn\'t match.'
+        x = nn.interpolate(x, scale_factor = 2, mode = "nearest")
+        output = self.layer(x)
+        return output
+
+class ClassifierFreeDownsample(nn.Module):
+    """
+    a downsampling layer
+    """
+    def __init__(self, in_ch:int, out_ch:int, use_conv:bool):
+        super().__init__()
+        self.in_ch = in_ch
+        self.out_ch = out_ch
+        if use_conv:
+            self.layer = nn.Conv2d(self.in_ch, self.out_ch, kernel_size = 3, stride = 2, padding = 1)
+        else:
+            self.layer = nn.AvgPool2d(kernel_size = 2, stride = 2)
+    def execute(self, x:jt.Var) -> jt.Var:
+        assert x.shape[1] == self.in_ch, f'x and upsampling layer({self.in_ch}->{self.out_ch}) doesn\'t match.'
+        return self.layer(x)
+
+
+class AttnBlock(nn.Module):
+    def __init__(self, in_ch:int):
+        super().__init__()
+        self.group_norm = nn.GroupNorm(32, in_ch)
+        self.proj_q = nn.Conv2d(in_ch, in_ch, kernel_size = 1, stride=1, padding=0)
+        self.proj_k = nn.Conv2d(in_ch, in_ch, kernel_size = 1, stride=1, padding=0)
+        self.proj_v = nn.Conv2d(in_ch, in_ch, kernel_size = 1, stride=1, padding=0)
+        self.proj = nn.Conv2d(in_ch, in_ch, kernel_size = 1, stride=1, padding=0)
+
+    def execute(self, x:jt.Var) -> jt.Var:
+        B, C, H, W = x.shape
+        h = self.group_norm(x)
+        q = self.proj_q(h)
+        k = self.proj_k(h)
+        v = self.proj_v(h)
+
+        q = q.permute(0, 2, 3, 1).view(B, H * W, C)
+        k = k.view(B, C, H * W)
+        w = jt.bmm(q, k) * (int(C) ** (-0.5))
+        assert list(w.shape) == [B, H * W, H * W]
+        w = nn.softmax(w, dim=-1)
+
+        v = v.permute(0, 2, 3, 1).view(B, H * W, C)
+        h = jt.bmm(w, v)
+        assert list(h.shape) == [B, H * W, C]
+        h = h.view(B, H, W, C).permute(0, 3, 1, 2)
+        h = self.proj(h)
+
+        return x + h
+
+class Unet(nn.Module):
+    def __init__(self, in_ch=3, mod_ch=64, out_ch=3, ch_mul=[1,2,4,8], num_res_blocks=2, cdim=10, use_conv=True, droprate=0, dtype=jt.float32):
+        super().__init__()
+        self.in_ch = in_ch
+        self.mod_ch = mod_ch
+        self.out_ch = out_ch
+        self.ch_mul = ch_mul
+        self.num_res_blocks = num_res_blocks
+        self.cdim = cdim
+        self.use_conv = use_conv
+        self.droprate = droprate
+        # self.num_heads = num_heads
+        self.dtype = dtype
+        tdim = mod_ch * 4
+        self.temb_layer = nn.Sequential(
+            nn.Linear(mod_ch, tdim),
+            SiLU(),
+            nn.Linear(tdim, tdim),
+        )
+        self.cemb_layer = nn.Sequential(
+            nn.Linear(self.cdim, tdim),
+            SiLU(),
+            nn.Linear(tdim, tdim),
+        )
+        self.downblocks = nn.ModuleList([
+            EmbedSequential(nn.Conv2d(in_ch, self.mod_ch, 3, padding=1))
+        ])
+        now_ch = self.ch_mul[0] * self.mod_ch
+        chs = [now_ch]
+        for i, mul in enumerate(self.ch_mul):
+            nxt_ch = mul * self.mod_ch
+            for _ in range(self.num_res_blocks):
+                layers = [
+                    ClassifierFreeResBlock(now_ch, nxt_ch, tdim, tdim, self.droprate),
+                    AttnBlock(nxt_ch)
+                ]
+                now_ch = nxt_ch
+                self.downblocks.append(EmbedSequential(*layers))
+                chs.append(now_ch)
+            if i != len(self.ch_mul) - 1:
+                self.downblocks.append(EmbedSequential(ClassifierFreeDownsample(now_ch, now_ch, self.use_conv)))
+                chs.append(now_ch)
+        self.middleblocks = EmbedSequential(
+            ClassifierFreeResBlock(now_ch, now_ch, tdim, tdim, self.droprate),
+            AttnBlock(now_ch),
+            ClassifierFreeResBlock(now_ch, now_ch, tdim, tdim, self.droprate)
+        )
+        self.upblocks = nn.ModuleList([])
+        for i, mul in list(enumerate(self.ch_mul))[::-1]:
+            nxt_ch = mul * self.mod_ch
+            for j in range(num_res_blocks + 1):
+                layers = [
+                    ClassifierFreeResBlock(now_ch+chs.pop(), nxt_ch, tdim, tdim, self.droprate),
+                    AttnBlock(nxt_ch)
+                ]
+                now_ch = nxt_ch
+                if i and j == self.num_res_blocks:
+                    layers.append(ClassifierFreeUpsample(now_ch, now_ch))
+                self.upblocks.append(EmbedSequential(*layers))
+        self.out = nn.Sequential(
+            nn.GroupNorm(32, now_ch),
+            SiLU(),
+            nn.Conv2d(now_ch, self.out_ch, 3, stride = 1, padding = 1)
+        )
+    def execute(self, x:jt.Var, t:jt.Var, cemb:jt.Var) -> jt.Var:
+        temb = self.temb_layer(timestep_embedding(t, self.mod_ch))
+        cemb = self.cemb_layer(cemb)
+        hs = []
+        h = x.unary(self.dtype)
+        for block in self.downblocks:
+            h = block(h, temb, cemb)
+            hs.append(h)
+        h = self.middleblocks(h, temb, cemb)
+        for block in self.upblocks:
+            h = jt.cat([h, hs.pop()], dim = 1)
+            h = block(h, temb, cemb)
+        h = h.unary(self.dtype)
+        return self.out(h)

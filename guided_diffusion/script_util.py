@@ -503,29 +503,21 @@ def get_named_beta_schedule(schedule_name='linear', num_diffusion_timesteps=1000
         raise NotImplementedError(f"unknown beta schedule: {schedule_name}")
 
 from .classifier_free_diffusion import GaussianDiffusion as cfd
+from .unet import Unet
 def create_classifier_free_diffusion(
     args
 ):
-    unet = create_model(
-        image_size=args.image_size,  
-        num_channels=args.num_channels,
-        num_res_blocks=args.num_res_blocks,
-        channel_mult=args.channel_mult,
-        learn_sigma=args.learn_sigma,
-        class_cond=args.class_cond,
-        use_checkpoint=args.use_checkpoint,
-        attention_resolutions=args.attention_resolutions,
-        num_heads=args.num_heads,
-        num_head_channels=args.num_head_channels,
-        num_heads_upsample=args.num_heads_upsample,
-        use_scale_shift_norm=args.use_scale_shift_norm,
-        dropout=args.dropout,
-        resblock_updown=args.resblock_updown,
-        use_fp16=args.use_fp16,
-        use_new_attention_order=args.use_new_attention_order,
-        use_classifier_free_diffusion=args.use_classifier_free_diffusion,
-        class_num=args.class_num
-    )
+    unet = Unet(
+                in_ch = args.inch,
+                mod_ch = args.modch,
+                out_ch = args.outch,
+                ch_mul = args.chmul,
+                num_res_blocks = args.numres,
+                cdim = args.cdim,
+                use_conv = args.useconv,
+                droprate = args.droprate,
+                dtype = args.dtype
+            )
     diffusion = cfd(
         model=unet,
         betas=get_named_beta_schedule(num_diffusion_timesteps = args.T),
