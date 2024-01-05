@@ -154,38 +154,38 @@ def train(args:argparse.Namespace):
             jt.save({'last_epoch':epc+1}, os.path.join(args.moddir,'last_epoch.pkl'))
             jt.save(checkpoint, os.path.join(args.moddir, f'ckpt_{epc+1}_checkpoint.pkl'))
             
-            print('sampling...')
-            diffusion.model.eval()
-            cemblayer.eval()
+            # print('sampling...')
+            # diffusion.model.eval()
+            # cemblayer.eval()
             # generating samples
             # The model generate 80 pictures(8 per row) each time
             # pictures of same row belong to the same class
-            all_samples = []
-            batch_size = args.genbatch
-            with jt.no_grad():
-                lab = jt.ones(args.clsnum, batch_size // args.clsnum) \
-                * jt.arange(start = 0, end = args.clsnum).reshape(-1, 1)
-                lab = lab.reshape(-1, 1).squeeze()
-                lab = lab
-                cemb = cemblayer(lab)
-                genshape = (batch_size , 3, 32, 32)
-                if args.ddim:
-                    generated = diffusion.ddim_sample(genshape, args.num_steps, args.eta, args.select, cemb = cemb)
-                else:
-                    generated = diffusion.sample(genshape, cemb = cemb)
-                img = transback(generated)
-                img = img.reshape(args.clsnum, batch_size // args.clsnum, 3, 32, 32).contiguous()
-                all_samples.extend([img])
-                samples = jt.concat(all_samples, dim = 1).reshape(args.genbatch, 3, 32, 32)
-                if not os.path.exists(args.samdir):
-                    os.mkdir(args.samdir)
-                save_image(samples, os.path.join(args.samdir, f'generated_{epc+1}_pict.png'), nrow = args.genbatch // args.clsnum)
+            # all_samples = []
+            # batch_size = args.genbatch
+            # with jt.no_grad():
+            #     lab = jt.ones(args.clsnum, batch_size // args.clsnum) \
+            #     * jt.arange(start = 0, end = args.clsnum).reshape(-1, 1)
+            #     lab = lab.reshape(-1, 1).squeeze()
+            #     lab = lab
+            #     cemb = cemblayer(lab)
+            #     genshape = (batch_size , 3, 32, 32)
+            #     if args.ddim:
+            #         generated = diffusion.ddim_sample(genshape, args.num_steps, args.eta, args.select, cemb = cemb)
+            #     else:
+            #         generated = diffusion.sample(genshape, cemb = cemb)
+            #     img = transback(generated)
+            #     img = img.reshape(args.clsnum, batch_size // args.clsnum, 3, 32, 32).contiguous()
+            #     all_samples.extend([img])
+            #     samples = jt.concat(all_samples, dim = 1).reshape(args.genbatch, 3, 32, 32)
+            #     if not os.path.exists(args.samdir):
+            #         os.mkdir(args.samdir)
+            #     save_image(samples, os.path.join(args.samdir, f'generated_{epc+1}_pict.png'), nrow = args.genbatch // args.clsnum)
 
 def main():
     # several hyperparameters for model
     parser = argparse.ArgumentParser(description='test for diffusion model')
 
-    parser.add_argument('--batchsize',type=int,default=128,help='batch size per device for training Unet model')
+    parser.add_argument('--batchsize',type=int,default=64,help='batch size per device for training Unet model')
     parser.add_argument('--inch',type=int,default=3,help='input channels for Unet model')
     parser.add_argument('--modch',type=int,default=64,help='model channels for Unet model')
     parser.add_argument('--T',type=int,default=1000,help='timesteps for Unet model')
@@ -211,7 +211,6 @@ def main():
     parser.add_argument('--eta',type=float,default=0,help='eta for variance during DDIM sampling process')
     parser.add_argument('--select',type=str,default='linear',help='selection stragies for DDIM')
     parser.add_argument('--ddim',type=lambda x:(str(x).lower() in ['true','1', 'yes']),default=False,help='whether to use ddim')
-    parser.add_argument('--local_rank',default=-1,type=int,help='node rank for distributed training')
     parser.add_argument('--checkpoint',default=-1,type=int,help='model\'s checkpoint epoch')
     # unet_setting
     parser.add_argument('--image_size',default=32,type=int)

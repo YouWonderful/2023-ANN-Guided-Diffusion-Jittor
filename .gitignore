@@ -8,3 +8,4 @@ sample/*
 !sample/sampleToimage.py
 output.txt
 evaluations/VIRTUAL_imagenet256_labeled.npz
+model/

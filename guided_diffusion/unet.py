@@ -617,7 +617,7 @@ class UNetModel(nn.Module):
                 input_block_chans.append(ch)
             if level != len(channel_mult) - 1:
                 if self.use_classifier_free_diffusion:
-                    self.input_blocks.append(EmbedSequential(Downsample(ch, conv_resample, dims=dims, out_channels=ch)))
+                    self.input_blocks.append(EmbedSequential(ClassifierFreeDownsample(ch, conv_resample, dims=dims, out_channels=ch)))
                     input_block_chans.append(ch)
                 else:
                     out_ch = ch
@@ -729,21 +729,26 @@ class UNetModel(nn.Module):
                     )
                 if level and i == num_res_blocks:
                     out_ch = ch
-                    layers.append(
-                        ResBlock(
-                            ch,
-                            time_embed_dim,
-                            dropout,
-                            out_channels=out_ch,
-                            dims=dims,
-                            use_checkpoint=use_checkpoint,
-                            use_scale_shift_norm=use_scale_shift_norm,
-                            up=True,
+                    if not self.use_classifier_free_diffusion:
+                        layers.append(
+                            ResBlock(
+                                ch,
+                                time_embed_dim,
+                                dropout,
+                                out_channels=out_ch,
+                                dims=dims,
+                                use_checkpoint=use_checkpoint,
+                                use_scale_shift_norm=use_scale_shift_norm,
+                                up=True,
+                            )
+                            if resblock_updown
+                            else Upsample(ch, conv_resample, dims=dims, out_channels=out_ch)
                         )
-                        if resblock_updown
-                        else Upsample(ch, conv_resample, dims=dims, out_channels=out_ch)
-                    )
-                    ds //= 2
+                        ds //= 2
+                    else:
+                        layers.append(
+                            ClassifierFreeUpsample(ch, ch)
+                        )
                 if not self.use_classifier_free_diffusion:
                     self.output_blocks.append(TimestepEmbedSequential(*layers))
                 else:

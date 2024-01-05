@@ -17,6 +17,8 @@ from guided_diffusion.script_util import (
     add_dict_to_argparser,
 )
 
+jt.flags.use_cuda = 1
+
 @jt.no_grad()
 def sample(args:argparse.Namespace):
     # initialize settings
@@ -54,7 +56,7 @@ def sample(args:argparse.Namespace):
     cemb = cemblayer(lab)
     genshape = (batch_size, 3, 32, 32)
     all_samples = []
-    print(numloop)
+    print(f'numloop:{numloop}')
     for _ in range(numloop):
         if args.ddim:
             generated = diffusion.ddim_sample(genshape, args.num_steps, args.eta, args.select, cemb = cemb)
@@ -78,7 +80,7 @@ def main():
     # several hyperparameters for models
     parser = argparse.ArgumentParser(description='test for diffusion model')
 
-    parser.add_argument('--genbatch',type=int,default=5600,help='batch size for sampling process')
+    parser.add_argument('--genbatch',type=int,default=80,help='batch size for sampling process')
     parser.add_argument('--T',type=int,default=1000,help='timesteps for Unet model')
     parser.add_argument('--dtype',default=jt.float32)
     parser.add_argument('--w',type=float,default=3.0,help='hyperparameters for classifier-free guidance strength')
@@ -86,7 +88,7 @@ def main():
     parser.add_argument('--epoch',type=int,default=1000,help='epochs for loading models')
     parser.add_argument('--cdim',type=int,default=10,help='dimension of conditional embedding')
     parser.add_argument('--label',type=str,default='range',help='labels of generated images')
-    parser.add_argument('--moddir',type=str,default='model_backup',help='model addresses')
+    parser.add_argument('--moddir',type=str,default='model',help='model addresses')
     parser.add_argument('--samdir',type=str,default='sample',help='sample addresses')
     parser.add_argument('--inch',type=int,default=3,help='input channels for Unet model')
     parser.add_argument('--modch',type=int,default=64,help='model channels for Unet model')
@@ -96,12 +98,12 @@ def main():
     parser.add_argument('--useconv',type=bool,default=True,help='whether use convlution in downsample')
     parser.add_argument('--droprate',type=float,default=0,help='dropout rate for model')
     parser.add_argument('--clsnum',type=int,default=10,help='num of label classes')
-    parser.add_argument('--fid',type=lambda x:(str(x).lower() in ['true','1', 'yes']),default=False,help='generate samples used for quantative evaluation')
+    parser.add_argument('--fid',type=bool,default=False,help='generate samples used for quantative evaluation')
     parser.add_argument('--genum',type=int,default=5600,help='num of generated samples')
     parser.add_argument('--num_steps',type=int,default=50,help='sampling steps for DDIM')
     parser.add_argument('--eta',type=float,default=0,help='eta for variance during DDIM sampling process')
     parser.add_argument('--select',type=str,default='linear',help='selection stragies for DDIM')
-    parser.add_argument('--ddim',type=lambda x:(str(x).lower() in ['true','1', 'yes']),default=False,help='whether to use ddim')
+    parser.add_argument('--ddim',type=bool,default=False,help='whether to use ddim')
     # unet_setting
     parser.add_argument('--image_size',default=32,type=int)
     parser.add_argument('--num_channels',default=64,type=int)
