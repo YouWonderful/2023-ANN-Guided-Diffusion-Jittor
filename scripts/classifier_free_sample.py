@@ -8,9 +8,6 @@ from jittor.misc import save_image
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))  # 将父级目录加入执行目录列表
-from unet import Unet
-from diffusion import GaussianDiffusion
-from utils import get_named_beta_schedule
 from guided_diffusion.embedding import ConditionalEmbedding
 from guided_diffusion.image_datasets import load_data_cifar, transback
 from guided_diffusion.script_util import (
