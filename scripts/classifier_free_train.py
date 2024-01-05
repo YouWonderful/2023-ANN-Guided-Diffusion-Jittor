@@ -142,6 +142,13 @@ def train(args:argparse.Namespace):
         # evaluation and save checkpoint
         if (epc + 1) % args.interval == 0:
             print('saving checkpoint...')
+            # save checkpoints
+            checkpoint = {
+                                'net':diffusion.model.state_dict(),
+                                'cemblayer':cemblayer.state_dict(),
+                                'optimizer':optimizer.state_dict(),
+                                'scheduler':warmUpScheduler.state_dict()
+                            }
             if not os.path.exists(args.moddir):
                 os.mkdir(args.moddir)
             jt.save({'last_epoch':epc+1}, os.path.join(args.moddir,'last_epoch.pkl'))
@@ -173,19 +180,12 @@ def train(args:argparse.Namespace):
                 if not os.path.exists(args.samdir):
                     os.mkdir(args.samdir)
                 save_image(samples, os.path.join(args.samdir, f'generated_{epc+1}_pict.png'), nrow = args.genbatch // args.clsnum)
-            # save checkpoints
-            checkpoint = {
-                                'net':diffusion.model.state_dict(),
-                                'cemblayer':cemblayer.state_dict(),
-                                'optimizer':optimizer.state_dict(),
-                                'scheduler':warmUpScheduler.state_dict()
-                            }
 
 def main():
     # several hyperparameters for model
     parser = argparse.ArgumentParser(description='test for diffusion model')
 
-    parser.add_argument('--batchsize',type=int,default=32,help='batch size per device for training Unet model')
+    parser.add_argument('--batchsize',type=int,default=16,help='batch size per device for training Unet model')
     parser.add_argument('--T',type=int,default=1000,help='timesteps for Unet model')
     parser.add_argument('--cdim',type=int,default=10,help='dimension of conditional embedding')
     parser.add_argument('--useconv',type=bool,default=True,help='whether use convlution in downsample')
