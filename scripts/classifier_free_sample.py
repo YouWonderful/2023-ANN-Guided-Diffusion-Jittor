@@ -80,7 +80,7 @@ def main():
     # several hyperparameters for models
     parser = argparse.ArgumentParser(description='test for diffusion model')
 
-    parser.add_argument('--genbatch',type=int,default=80,help='batch size for sampling process')
+    parser.add_argument('--genbatch',type=int,default=300,help='batch size for sampling process')
     parser.add_argument('--T',type=int,default=1000,help='timesteps for Unet model')
     parser.add_argument('--dtype',default=jt.float32)
     parser.add_argument('--w',type=float,default=3.0,help='hyperparameters for classifier-free guidance strength')

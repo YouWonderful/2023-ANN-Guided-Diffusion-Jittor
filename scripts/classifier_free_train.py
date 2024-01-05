@@ -185,7 +185,7 @@ def main():
     # several hyperparameters for model
     parser = argparse.ArgumentParser(description='test for diffusion model')
 
-    parser.add_argument('--batchsize',type=int,default=64,help='batch size per device for training Unet model')
+    parser.add_argument('--batchsize',type=int,default=16,help='batch size per device for training Unet model')
     parser.add_argument('--inch',type=int,default=3,help='input channels for Unet model')
     parser.add_argument('--modch',type=int,default=64,help='model channels for Unet model')
     parser.add_argument('--T',type=int,default=1000,help='timesteps for Unet model')
