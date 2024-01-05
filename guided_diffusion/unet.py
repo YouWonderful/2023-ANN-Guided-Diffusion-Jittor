@@ -588,7 +588,18 @@ class UNetModel(nn.Module):
                         ClassifierFreeResBlock(ch, int(mult * model_channels), time_embed_dim, time_embed_dim, self.dropout)
                     ]
                 ch = int(mult * model_channels)
-                if ds in attention_resolutions:
+                if not self.use_classifier_free_diffusion:
+                    if ds in attention_resolutions:
+                        layers.append(
+                            AttentionBlock(
+                                ch,
+                                use_checkpoint=use_checkpoint,
+                                num_heads=num_heads,
+                                num_head_channels=num_head_channels,
+                                use_new_attention_order=use_new_attention_order,
+                            )
+                        )
+                else:
                     layers.append(
                         AttentionBlock(
                             ch,
@@ -663,7 +674,13 @@ class UNetModel(nn.Module):
         else:
             self.middle_block = EmbedSequential(
                 ClassifierFreeResBlock(ch, ch, time_embed_dim, time_embed_dim, self.dropout),
-                AttentionBlock(ch),
+                AttentionBlock(
+                    ch,
+                    use_checkpoint=use_checkpoint,
+                    num_heads=num_heads,
+                    num_head_channels=num_head_channels,
+                    use_new_attention_order=use_new_attention_order,
+                ),
                 ClassifierFreeResBlock(ch, ch, time_embed_dim, time_embed_dim, self.dropout)
             )
 
@@ -689,7 +706,18 @@ class UNetModel(nn.Module):
                         ClassifierFreeResBlock(ch+ich, next_channel, time_embed_dim, time_embed_dim, self.dropout)
                     ]
                 ch = int(model_channels * mult)
-                if ds in attention_resolutions:
+                if not self.use_classifier_free_diffusion:
+                    if ds in attention_resolutions:
+                        layers.append(
+                            AttentionBlock(
+                                ch,
+                                use_checkpoint=use_checkpoint,
+                                num_heads=num_heads_upsample,
+                                num_head_channels=num_head_channels,
+                                use_new_attention_order=use_new_attention_order,
+                            )
+                        )
+                else:
                     layers.append(
                         AttentionBlock(
                             ch,

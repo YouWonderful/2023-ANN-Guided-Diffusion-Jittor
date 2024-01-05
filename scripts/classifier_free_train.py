@@ -141,6 +141,13 @@ def train(args:argparse.Namespace):
         warmUpScheduler.step()
         # evaluation and save checkpoint
         if (epc + 1) % args.interval == 0:
+            print('saving checkpoint...')
+            if not os.path.exists(args.moddir):
+                os.mkdir(args.moddir)
+            jt.save({'last_epoch':epc+1}, os.path.join(args.moddir,'last_epoch.pkl'))
+            jt.save(checkpoint, os.path.join(args.moddir, f'ckpt_{epc+1}_checkpoint.pkl'))
+            
+            print('sampling...')
             diffusion.model.eval()
             cemblayer.eval()
             # generating samples
@@ -173,16 +180,12 @@ def train(args:argparse.Namespace):
                                 'optimizer':optimizer.state_dict(),
                                 'scheduler':warmUpScheduler.state_dict()
                             }
-            if not os.path.exists(args.moddir):
-                os.mkdir(args.moddir)
-            jt.save({'last_epoch':epc+1}, os.path.join(args.moddir,'last_epoch.pkl'))
-            jt.save(checkpoint, os.path.join(args.moddir, f'ckpt_{epc+1}_checkpoint.pkl'))
 
 def main():
     # several hyperparameters for model
     parser = argparse.ArgumentParser(description='test for diffusion model')
 
-    parser.add_argument('--batchsize',type=int,default=100,help='batch size per device for training Unet model')
+    parser.add_argument('--batchsize',type=int,default=32,help='batch size per device for training Unet model')
     parser.add_argument('--T',type=int,default=1000,help='timesteps for Unet model')
     parser.add_argument('--cdim',type=int,default=10,help='dimension of conditional embedding')
     parser.add_argument('--useconv',type=bool,default=True,help='whether use convlution in downsample')
@@ -192,7 +195,7 @@ def main():
     parser.add_argument('--epoch',type=int,default=1500,help='epochs for training')
     parser.add_argument('--multiplier',type=float,default=2.5,help='multiplier for warmup')
     parser.add_argument('--threshold',type=float,default=0.1,help='threshold for classifier-free guidance')
-    parser.add_argument('--interval',type=int,default=5,help='epoch interval between two evaluations')
+    parser.add_argument('--interval',type=int,default=1,help='epoch interval between two evaluations')
     parser.add_argument('--moddir',type=str,default='models',help='model addresses')
     parser.add_argument('--samdir',type=str,default='sample',help='sample addresses')
     parser.add_argument('--genbatch',type=int,default=80,help='batch size for sampling process')
