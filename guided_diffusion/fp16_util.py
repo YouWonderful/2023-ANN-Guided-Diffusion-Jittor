@@ -62,9 +62,9 @@ def convert_module_to_f16(l):
     Convert primitive modules to float16.
     """
     if isinstance(l, (nn.Conv1d, nn.Conv2d, nn.Conv3d)):
-        l.weight = jt.array(l.weight.data.astype(np.float16))
+        l.weight.data = jt.array(l.weight.data).half()
         if l.bias is not None:
-            l.bias = jt.array(l.bias.data.astype(np.float16))
+            l.bias.data = jt.array(l.bias.data).half()
 
 
 def convert_module_to_f32(l):

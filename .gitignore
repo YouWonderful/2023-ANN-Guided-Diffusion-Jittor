@@ -4,3 +4,7 @@ classify_image_graph_def.pb
 datasets/*
 !datasets/README.md
 models
+sample/*
+!sample/sampleToimage.py
+output.txt
+evaluations/VIRTUAL_imagenet256_labeled.npz

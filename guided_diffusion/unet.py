@@ -42,7 +42,7 @@ class AttentionPool2d(nn.Module):
     def execute(self, x):
         b, c, *_spatial = x.shape
         x = x.reshape(b, c, -1)  # NC(HW)
-        x = jt.concat([x.mean(dim=-1, keepdim=True), x], dim=-1)  # NC(HW+1)
+        x = jt.concat([x.mean(dim=-1, keepdims=True), x], dim=-1)  # NC(HW+1)
         x = x + self.positional_embedding[None, :, :].to(x.dtype)  # NC(HW+1)
         x = self.qkv_proj(x)
         x = self.attention(x)
@@ -137,6 +137,27 @@ class Downsample(nn.Module):
     def execute(self, x):
         assert x.shape[1] == self.channels
         return self.op(x)
+
+
+class EmbedBlock(nn.Module):
+    """
+    abstract class
+    """
+    @abstractmethod
+    def execute(self, x, temb, cemb):
+        """
+        abstract method
+        """
+        
+        
+class EmbedSequential(nn.Sequential, EmbedBlock):
+    def execute(self, x:jt.Var, temb:jt.Var, cemb:jt.Var) -> jt.Var:
+        for layer in self:
+            if isinstance(layer, EmbedBlock):
+                x = layer(x, temb, cemb)
+            else:
+                x = layer(x)
+        return x
 
 
 class ResBlock(TimestepBlock):
@@ -257,6 +278,51 @@ class ResBlock(TimestepBlock):
             h = h + emb_out
             h = self.out_layers(h)
         return self.skip_connection(x) + h
+
+
+class ClassifierFreeResBlock(EmbedBlock):
+    def __init__(self, in_ch:jt.Var, out_ch:jt.Var, tdim:int, cdim:int, droprate:float):
+        super().__init__()
+        self.in_ch = in_ch
+        self.out_ch = out_ch
+        self.tdim = tdim
+        self.cdim = cdim
+        self.droprate = droprate
+
+        self.block_1 = nn.Sequential(
+            nn.GroupNorm(32, in_ch),
+            SiLU(),
+            nn.Conv2d(in_ch, out_ch, kernel_size = 3, padding = 1),
+        )
+
+        self.temb_proj = nn.Sequential(
+            SiLU(),
+            nn.Linear(tdim, out_ch),
+        )
+        self.cemb_proj = nn.Sequential(
+            SiLU(),
+            nn.Linear(cdim, out_ch),
+        )
+        
+        self.block_2 = nn.Sequential(
+            nn.GroupNorm(32, out_ch),
+            SiLU(),
+            nn.Dropout(p = self.droprate),
+            nn.Conv2d(out_ch, out_ch, kernel_size = 3, stride = 1, padding = 1),
+            
+        )
+        if in_ch != out_ch:
+            self.residual = nn.Conv2d(in_ch, out_ch, kernel_size = 1, stride = 1, padding = 0)
+        else:
+            self.residual = nn.Identity()
+    def execute(self, x:jt.Var, temb:jt.Var, cemb:jt.Var) -> jt.Var:
+        latent = self.block_1(x)
+        latent += self.temb_proj(temb)[:, :, None, None]
+        latent += self.cemb_proj(cemb)[:, :, None, None]
+        latent = self.block_2(latent)
+
+        latent += self.residual(x)
+        return latent
 
 
 class AttentionBlock(nn.Module):
@@ -449,6 +515,8 @@ class UNetModel(nn.Module):
         use_scale_shift_norm=False,
         resblock_updown=False,
         use_new_attention_order=False,
+        use_classifier_free_diffusion=False,
+        class_num=10
     ):
         super().__init__()
 
@@ -477,30 +545,48 @@ class UNetModel(nn.Module):
             SiLU(),
             linear(time_embed_dim, time_embed_dim),
         )
+        
+        self.use_classifier_free_diffusion = use_classifier_free_diffusion
+        if self.use_classifier_free_diffusion:
+            self.cemb_layer = nn.Sequential(
+                nn.Linear(class_num, time_embed_dim),
+                SiLU(),
+                nn.Linear(time_embed_dim, time_embed_dim),
+            )
 
         if self.num_classes is not None:
             self.label_emb = nn.Embedding(num_classes, time_embed_dim)
 
         ch = input_ch = int(channel_mult[0] * model_channels)
-        self.input_blocks = nn.ModuleList(
-            [TimestepEmbedSequential(conv_nd(dims, in_channels, ch, 3, padding=1))]
-        )
+        if self.use_classifier_free_diffusion:
+            self.input_blocks = nn.ModuleList(
+                [EmbedSequential(conv_nd(dims, in_channels, ch, 3, padding=1))]
+            )
+        else:
+            self.input_blocks = nn.ModuleList(
+                [TimestepEmbedSequential(conv_nd(dims, in_channels, ch, 3, padding=1))]
+            )
         self._feature_size = ch
         input_block_chans = [ch]
         ds = 1
         for level, mult in enumerate(channel_mult):
             for _ in range(num_res_blocks):
-                layers = [
-                    ResBlock(
-                        ch,
-                        time_embed_dim,
-                        dropout,
-                        out_channels=int(mult * model_channels),
-                        dims=dims,
-                        use_checkpoint=use_checkpoint,
-                        use_scale_shift_norm=use_scale_shift_norm,
-                    )
-                ]
+                if not self.use_classifier_free_diffusion:
+                    layers = [
+                        ResBlock(
+                            ch,
+                            time_embed_dim,
+                            dropout,
+                            out_channels=int(mult * model_channels),
+                            dims=dims,
+                            use_checkpoint=use_checkpoint,
+                            use_scale_shift_norm=use_scale_shift_norm,
+                        )
+                    ]
+                else:
+                    layers = [
+                        ClassifierFreeResBlock(ch, int(mult * model_channels), time_embed_dim, time_embed_dim, self.dropout)
+                    ]
                 ch = int(mult * model_channels)
                 if ds in attention_resolutions:
                     layers.append(
@@ -512,76 +598,96 @@ class UNetModel(nn.Module):
                             use_new_attention_order=use_new_attention_order,
                         )
                     )
-                self.input_blocks.append(TimestepEmbedSequential(*layers))
+                if not self.use_classifier_free_diffusion:
+                    self.input_blocks.append(TimestepEmbedSequential(*layers))
+                else:
+                    self.input_blocks.append(EmbedSequential(*layers))
                 self._feature_size += ch
                 input_block_chans.append(ch)
             if level != len(channel_mult) - 1:
-                out_ch = ch
-                self.input_blocks.append(
-                    TimestepEmbedSequential(
-                        ResBlock(
-                            ch,
-                            time_embed_dim,
-                            dropout,
-                            out_channels=out_ch,
-                            dims=dims,
-                            use_checkpoint=use_checkpoint,
-                            use_scale_shift_norm=use_scale_shift_norm,
-                            down=True,
-                        )
-                        if resblock_updown
-                        else Downsample(
-                            ch, conv_resample, dims=dims, out_channels=out_ch
+                if self.use_classifier_free_diffusion:
+                    self.input_blocks.append(EmbedSequential(Downsample(ch, conv_resample, dims=dims, out_channels=ch)))
+                    input_block_chans.append(ch)
+                else:
+                    out_ch = ch
+                    self.input_blocks.append(
+                        TimestepEmbedSequential(
+                            ResBlock(
+                                ch,
+                                time_embed_dim,
+                                dropout,
+                                out_channels=out_ch,
+                                dims=dims,
+                                use_checkpoint=use_checkpoint,
+                                use_scale_shift_norm=use_scale_shift_norm,
+                                down=True,
+                            )
+                            if resblock_updown
+                            else Downsample(
+                                ch, conv_resample, dims=dims, out_channels=out_ch
+                            )
                         )
                     )
-                )
-                ch = out_ch
-                input_block_chans.append(ch)
-                ds *= 2
-                self._feature_size += ch
+                    ch = out_ch
+                    input_block_chans.append(ch)
+                    ds *= 2
+                    self._feature_size += ch
 
-        self.middle_block = TimestepEmbedSequential(
-            ResBlock(
-                ch,
-                time_embed_dim,
-                dropout,
-                dims=dims,
-                use_checkpoint=use_checkpoint,
-                use_scale_shift_norm=use_scale_shift_norm,
-            ),
-            AttentionBlock(
-                ch,
-                use_checkpoint=use_checkpoint,
-                num_heads=num_heads,
-                num_head_channels=num_head_channels,
-                use_new_attention_order=use_new_attention_order,
-            ),
-            ResBlock(
-                ch,
-                time_embed_dim,
-                dropout,
-                dims=dims,
-                use_checkpoint=use_checkpoint,
-                use_scale_shift_norm=use_scale_shift_norm,
-            ),
-        )
-        self._feature_size += ch
+        if not self.use_classifier_free_diffusion:
+            self.middle_block = TimestepEmbedSequential(
+                ResBlock(
+                    ch,
+                    time_embed_dim,
+                    dropout,
+                    dims=dims,
+                    use_checkpoint=use_checkpoint,
+                    use_scale_shift_norm=use_scale_shift_norm,
+                ),
+                AttentionBlock(
+                    ch,
+                    use_checkpoint=use_checkpoint,
+                    num_heads=num_heads,
+                    num_head_channels=num_head_channels,
+                    use_new_attention_order=use_new_attention_order,
+                ),
+                ResBlock(
+                    ch,
+                    time_embed_dim,
+                    dropout,
+                    dims=dims,
+                    use_checkpoint=use_checkpoint,
+                    use_scale_shift_norm=use_scale_shift_norm,
+                ),
+            )
+            self._feature_size += ch
+        else:
+            self.middle_block = EmbedSequential(
+                ClassifierFreeResBlock(ch, ch, time_embed_dim, time_embed_dim, self.dropout),
+                AttentionBlock(ch),
+                ClassifierFreeResBlock(ch, ch, time_embed_dim, time_embed_dim, self.dropout)
+            )
 
         self.output_blocks = nn.ModuleList([])
         for level, mult in list(enumerate(channel_mult))[::-1]:
             for i in range(num_res_blocks + 1):
                 ich = input_block_chans.pop()
-                layers = [
-                    ResBlock(
-                        ch + ich,
-                        time_embed_dim,
-                        dropout,
-                        out_channels=int(model_channels * mult),
-                        dims=dims,
-                        use_checkpoint=use_checkpoint,
-                        use_scale_shift_norm=use_scale_shift_norm,
-                    )
-                ]
+                if not self.use_classifier_free_diffusion:
+                    layers = [
+                        ResBlock(
+                            ch + ich,
+                            time_embed_dim,
+                            dropout,
+                            out_channels=int(model_channels * mult),
+                            dims=dims,
+                            use_checkpoint=use_checkpoint,
+                            use_scale_shift_norm=use_scale_shift_norm,
+                        )
+                    ]
+                else:
+                    next_channel = model_channels * mult
+                    layers = [
+                        ClassifierFreeResBlock(ch+ich, next_channel, time_embed_dim, time_embed_dim, self.dropout)
+                    ]
                 ch = int(model_channels * mult)
                 if ds in attention_resolutions:
                     layers.append(
@@ -610,7 +716,10 @@ class UNetModel(nn.Module):
                         else Upsample(ch, conv_resample, dims=dims, out_channels=out_ch)
                     )
                     ds //= 2
-                self.output_blocks.append(TimestepEmbedSequential(*layers))
+                if not self.use_classifier_free_diffusion:
+                    self.output_blocks.append(TimestepEmbedSequential(*layers))
+                else:
+                    self.output_blocks.append(EmbedSequential(*layers))
                 self._feature_size += ch
 
         self.out = nn.Sequential(
@@ -635,7 +744,7 @@ class UNetModel(nn.Module):
         self.middle_block.apply(convert_module_to_f32)
         self.output_blocks.apply(convert_module_to_f32)
 
-    def execute(self, x, timesteps, y=None):
+    def execute(self, x, timesteps, y=None, cemb=jt.array(0)):
         """
         Apply the model to an input batch.
 
@@ -654,16 +763,32 @@ class UNetModel(nn.Module):
         if self.num_classes is not None:
             assert y.shape == (x.shape[0],)
             emb = emb + self.label_emb(y)
-
-        h = x.unary(self.dtype)
-        for module in self.input_blocks:
-            h = module(h, emb)
-            hs.append(h)
-        h = self.middle_block(h, emb)
-        for module in self.output_blocks:
-            h = jt.concat([h, hs.pop()], dim=1)
-            h = module(h, emb)
-        h = h.unary(x.dtype)
+            
+        if self.use_classifier_free_diffusion:
+            cemb = self.cemb_layer(cemb)
+            hs = []
+            h = x.unary(self.dtype)
+            for block in self.input_blocks:
+                h = block(h, emb, cemb)
+                hs.append(h)
+            h = self.middle_block(h, emb, cemb)
+            for block in self.output_blocks:
+                h = jt.concat([h, hs.pop()], dim = 1)
+                h = block(h, emb, cemb)
+            h = h.unary(self.dtype)
+        else:
+            h = x.unary(self.dtype)
+            # print("out: ", h.shape)
+            for module in self.input_blocks:
+                h = module(h, emb)
+                hs.append(h)
+                # print("in: ", h.shape)
+            h = self.middle_block(h, emb)
+            for module in self.output_blocks:
+                h = jt.concat([h, hs.pop()], dim=1)
+                h = module(h, emb)
+            h = h.unary(x.dtype)
+        
         return self.out(h)
 
 

@@ -4,7 +4,11 @@ import random
 from PIL import Image
 import blobfile as bf
 import numpy as np
+import jittor as jt
 import jittor.dataset as Data
+
+from jittor import transform
+from jittor.dataset import CIFAR10
 
 
 def load_data(
@@ -162,3 +166,25 @@ def random_crop_arr(pil_image, image_size, min_crop_frac=0.8, max_crop_frac=1.0)
     crop_y = random.randrange(arr.shape[0] - image_size + 1)
     crop_x = random.randrange(arr.shape[1] - image_size + 1)
     return arr[crop_y : crop_y + image_size, crop_x : crop_x + image_size]
+
+def load_data_cifar(batchsize:int) -> Data.DataLoader:
+    trans = transform.Compose([
+            transform.ToTensor(),
+            transform.ImageNormalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        ])
+    data_train = CIFAR10(
+                        root = 'datasets/cifar10',
+                        train = True,
+                        download = True,
+                        transform = trans
+                    )
+    trainloader = Data.DataLoader(
+                        data_train,
+                        batch_size = batchsize,
+                        shuffle=True,
+                        drop_last = True
+                    )
+    return trainloader
+
+def transback(data:jt.Var) -> jt.Var:
+    return data / 2 + 0.5

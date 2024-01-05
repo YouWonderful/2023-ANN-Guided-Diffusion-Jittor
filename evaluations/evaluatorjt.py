@@ -13,8 +13,9 @@ from typing import Iterable, Optional, Tuple
 
 import numpy as np
 import requests
-import tensorflow._api.v2.compat.v1 as tf
-tf.disable_v2_behavior()
+# import tensorflow._api.v2.compat.v1 as tf
+# tf.disable_v2_behavior()
+import jittor as jt
 
 from scipy import linalg
 from tqdm.auto import tqdm
@@ -28,17 +29,16 @@ FID_SPATIAL_NAME = "mixed_6/conv:0"
 
 def main():
     parser = argparse.ArgumentParser()
-    #parser.add_argument("ref_batch", help="path to reference batch npz file",default = './evaluations/VIRTUAL_imagenet256_labeled.npz')
-    #parser.add_argument("sample_batch", help="path to sample batch npz file",default = './sample/samples_100x256x256x3.npz')
-    parser.add_argument("ref_batch", default = './evaluations/VIRTUAL_imagenet256_labeled.npz')
-    parser.add_argument("sample_batch", default = './sample/samples_100x256x256x3.npz')
+    parser.add_argument("--ref_batch", help="path to reference batch npz file",default = './evaluations/VIRTUAL_imagenet256_labeled.npz',required = False)
+    parser.add_argument("--sample_batch", help="path to sample batch npz file",default = '/root/2023-ann-diffussion-jittor/sample/samples_4x256x256x3.npz',required = False)
     args = parser.parse_args()
-
-    config = tf.ConfigProto(
-        allow_soft_placement=True  # allows DecodeJpeg to run on CPU in Inception graph
-    )
-    config.gpu_options.allow_growth = True
-    evaluator = Evaluator(tf.Session(config=config))
+    args.ref_batch = './evaluations/VIRTUAL_imagenet256_labeled.npz'
+    args.sample_batch = '/root/2023-ann-diffussion-jittor/sample/samples_4x256x256x3.npz'
+    # config = jt.ConfigProto(
+    #     allow_soft_placement=True  # allows DecodeJpeg to run on CPU in Inception graph
+    # )
+    #config.gpu_options.allow_growth = True
+    evaluator = Evaluator(jt.Session(config=config))
 
     print("warming up TensorFlow...")
     # This will cause TF to print a bunch of verbose stuff now rather
@@ -131,8 +131,8 @@ class Evaluator:
         self.softmax_batch_size = softmax_batch_size
         self.manifold_estimator = ManifoldEstimator(session)
         with self.sess.graph.as_default():
-            self.image_input = tf.placeholder(tf.float32, shape=[None, None, None, 3])
-            self.softmax_input = tf.placeholder(tf.float32, shape=[None, 2048])
+            self.image_input = jt.placeholder(jt.float32, shape=[None, None, None, 3])
+            self.softmax_input = jt.placeholder(jt.float32, shape=[None, 2048])
             self.pool_features, self.spatial_features = _create_feature_graph(self.image_input)
             self.softmax = _create_softmax_graph(self.softmax_input)
 
@@ -215,7 +215,7 @@ class ManifoldEstimator:
 
     def __init__(
         self,
-        session,
+        #session,
         row_batch_size=10000,
         col_batch_size=10000,
         nhood_sizes=(3,),
@@ -371,28 +371,28 @@ class DistanceBlock:
     """
 
     def __init__(self, session):
-        self.session = session
+        #self.session = session
 
         # Initialize TF graph to calculate pairwise distances.
-        with session.graph.as_default():
-            self._features_batch1 = tf.placeholder(tf.float32, shape=[None, None])
-            self._features_batch2 = tf.placeholder(tf.float32, shape=[None, None])
-            distance_block_16 = _batch_pairwise_distances(
-                tf.cast(self._features_batch1, tf.float16),
-                tf.cast(self._features_batch2, tf.float16),
-            )
-            self.distance_block = tf.cond(
-                tf.reduce_all(tf.math.is_finite(distance_block_16)),
-                lambda: tf.cast(distance_block_16, tf.float32),
-                lambda: _batch_pairwise_distances(self._features_batch1, self._features_batch2),
-            )
+        #with session.graph.as_default():
+        self._features_batch1 = jt.placeholder(jt.float32, shape=[None, None])
+        self._features_batch2 = jt.placeholder(jt.float32, shape=[None, None])
+        distance_block_16 = _batch_pairwise_distances(
+            jt.cast(self._features_batch1, jt.float16),
+            jt.cast(self._features_batch2, jt.float16),
+        )
+        self.distance_block = jt.cond(
+            jt.reduce_all(jt.math.is_finite(distance_block_16)),
+            lambda: jt.cast(distance_block_16, jt.float32),
+            lambda: _batch_pairwise_distances(self._features_batch1, self._features_batch2),
+        )
 
             # Extra logic for less thans.
-            self._radii1 = tf.placeholder(tf.float32, shape=[None, None])
-            self._radii2 = tf.placeholder(tf.float32, shape=[None, None])
-            dist32 = tf.cast(self.distance_block, tf.float32)[..., None]
-            self._batch_1_in = tf.math.reduce_any(dist32 <= self._radii2, axis=1)
-            self._batch_2_in = tf.math.reduce_any(dist32 <= self._radii1[:, None], axis=0)
+        self._radii1 = jt.placeholder(jt.float32, shape=[None, None])
+        self._radii2 = jt.placeholder(jt.float32, shape=[None, None])
+        dist32 = jt.cast(self.distance_block, jt.float32)[..., None]
+        self._batch_1_in = jt.math.reduce_any(dist32 <= self._radii2, axis=1)
+        self._batch_2_in = jt.math.reduce_any(dist32 <= self._radii1[:, None], axis=0)
 
     def pairwise_distances(self, U, V):
         """
@@ -419,17 +419,17 @@ def _batch_pairwise_distances(U, V):
     """
     Compute pairwise distances between two batches of feature vectors.
     """
-    with tf.variable_scope("pairwise_dist_block"):
+    with jt.variable_scope("pairwise_dist_block"):
         # Squared norms of each row in U and V.
-        norm_u = tf.reduce_sum(tf.square(U), 1)
-        norm_v = tf.reduce_sum(tf.square(V), 1)
+        norm_u = jt.reduce_sum(jt.square(U), 1)
+        norm_v = jt.reduce_sum(jt.square(V), 1)
 
         # norm_u as a column and norm_v as a row vectors.
-        norm_u = tf.reshape(norm_u, [-1, 1])
-        norm_v = tf.reshape(norm_v, [1, -1])
+        norm_u = jt.reshape(norm_u, [-1, 1])
+        norm_v = jt.reshape(norm_v, [1, -1])
 
         # Pairwise squared Euclidean distances.
-        D = tf.maximum(norm_u - 2 * tf.matmul(U, V, False, True) + norm_v, 0.0)
+        D = jt.maximum(norm_u - 2 * jt.matmul(U, V, False, True) + norm_v, 0.0)
 
     return D
 
@@ -591,9 +591,9 @@ def _create_feature_graph(input_batch):
     _download_inception_model()
     prefix = f"{random.randrange(2**32)}_{random.randrange(2**32)}"
     with open(INCEPTION_V3_PATH, "rb") as f:
-        graph_def = tf.GraphDef()
+        graph_def = jt.GraphDef()
         graph_def.ParseFromString(f.read())
-    pool3, spatial = tf.import_graph_def(
+    pool3, spatial = jt.import_graph_def(
         graph_def,
         input_map={f"ExpandDims:0": input_batch},
         return_elements=[FID_POOL_NAME, FID_SPATIAL_NAME],
@@ -608,14 +608,14 @@ def _create_softmax_graph(input_batch):
     _download_inception_model()
     prefix = f"{random.randrange(2**32)}_{random.randrange(2**32)}"
     with open(INCEPTION_V3_PATH, "rb") as f:
-        graph_def = tf.GraphDef()
+        graph_def = jt.GraphDef()
         graph_def.ParseFromString(f.read())
-    (matmul,) = tf.import_graph_def(
+    (matmul,) = jt.import_graph_def(
         graph_def, return_elements=[f"softmax/logits/MatMul"], name=prefix
     )
     w = matmul.inputs[1]
-    logits = tf.matmul(input_batch, w)
-    return tf.nn.softmax(logits)
+    logits = jt.matmul(input_batch, w)
+    return jt.nn.softmax(logits)
 
 
 def _update_shapes(pool3):
@@ -633,7 +633,7 @@ def _update_shapes(pool3):
                         new_shape.append(None)
                     else:
                         new_shape.append(s)
-                o.__dict__["_shape_val"] = tf.TensorShape(new_shape)
+                o.__dict__["_shape_val"] = jt.TensorShape(new_shape)
     return pool3
 
 

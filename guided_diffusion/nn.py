@@ -171,7 +171,7 @@ def checkpoint(func, inputs, params, flag):
     """
     if flag:
         args = tuple(inputs) + tuple(params)
-        return CheckpointFunction(func, len(inputs), *args)
+        return CheckpointFunction.apply(func, len(inputs), *args)
     else:
         return func(*inputs)
 

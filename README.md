@@ -59,6 +59,15 @@ python scripts/classifier_train.py --data_dir ./datasets/train $TRAIN_FLAGS $CLA
 # sample
 python ./scripts/classifier_sample.py $MODEL_FLAGS --classifier_scale 1.0 --classifier_path models/256x256_classifier.pt --model_path models/256x256_diffusion.pt $SAMPLE_FLAGS
 ```
+python3 ./scripts/classifier_sample.py --batch_size 4 --num_samples 1000 --timestep_respacing 250 --attention_resolutions 32,16,8 --class_cond True --diffusion_steps 1000 --image_size 256 --learn_sigma True --noise_schedule linear --num_channels 256 --num_head_channels 64 --num_res_blocks 2 --resblock_updown True --use_scale_shift_norm True --classifier_scale 1.0 --classifier_path models/256x256_classifier.pkl --model_path models/256x256_diffusion.pkl --use_fp16 True
 
-## Jittor changed
-jittor.nn.py: 814 & 815
+python3 ./scripts/classifier_sample.py --batch_size 4 --num_samples 2000 --timestep_respacing 250 --attention_resolutions 32,16,8 --class_cond True --diffusion_steps 1000 --image_size 256 --learn_sigma True --noise_schedule linear --num_channels 256 --num_head_channels 64 --num_res_blocks 2 --resblock_updown True --use_scale_shift_norm True --classifier_scale 1.0 --classifier_path ../2023-ann-diffussion-jittor/models/256x256_classifier.pt --model_path ../2023-ann-diffussion-jittor/models/256x256_diffusion.pt --use_fp16 True
+
+python evaluator.py VIRTUAL_imagenet256_labeled.npz ../sample/samples_50000x256x256x3.npz 
+
+python evaluatorjt.py VIRTUAL_imagenet256_labeled.npz ../sample/samples_1000x256x256x3.npz 
+
+python3 ../guided-diffusion-main2/scripts/classifier_sample.py --batch_size 4 --num_samples 50 --timestep_respacing 250 --attention_resolutions 32,16,8 --class_cond True --diffusion_steps 1000 --image_size 256 --learn_sigma True --noise_schedule linear --num_channels 256 --num_head_channels 64 --num_res_blocks 2 --resblock_updown True --use_scale_shift_norm True --classifier_scale 1.0 --classifier_path models/256x256_classifier.pt --model_path models/256x256_diffusion.pt --use_fp16 True
+
+Pytorch Version
+python3 ./scripts/sample.py --batch_size 20 --num_samples 1000 --timestep_respacing 250 --attention_resolutions 32,16,8 --class_cond True --diffusion_steps 1000 --image_size 256 --learn_sigma True --noise_schedule linear --num_channels 256 --num_head_channels 64 --num_res_blocks 2 --resblock_updown True --use_scale_shift_norm True --classifier_scale 1.0 --classifier_path ../2023-ann-diffussion-jittor/models/256x256_classifier.pt --model_path ../2023-ann-diffussion-jittor/models/256x256_diffusion.pt --use_fp16 True

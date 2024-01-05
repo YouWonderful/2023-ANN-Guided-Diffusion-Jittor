@@ -681,7 +681,7 @@ class GaussianDiffusion:
         if noise is not None:
             img = noise
         else:
-            img = jt.randn(*shape, device=device)
+            img = jt.randn(*shape)
         indices = list(range(self.num_timesteps))[::-1]
 
         if progress:
@@ -691,7 +691,7 @@ class GaussianDiffusion:
             indices = tqdm(indices)
 
         for i in indices:
-            t = jt.var([i] * shape[0], device=device)
+            t = jt.array([i] * shape[0])
             with jt.no_grad():
                 out = self.ddim_sample(
                     model,
@@ -827,7 +827,7 @@ class GaussianDiffusion:
         :return: a batch of [N] KL values (in bits), one per batch element.
         """
         batch_size = x_start.shape[0]
-        t = jt.tensor([self.num_timesteps - 1] * batch_size, device=x_start.device)
+        t = jt.array([self.num_timesteps - 1] * batch_size)
         qt_mean, _, qt_log_variance = self.q_mean_variance(x_start, t)
         kl_prior = normal_kl(
             mean1=qt_mean, logvar1=qt_log_variance, mean2=0.0, logvar2=0.0
@@ -859,7 +859,7 @@ class GaussianDiffusion:
         xstart_mse = []
         mse = []
         for t in list(range(self.num_timesteps))[::-1]:
-            t_batch = jt.var([t] * batch_size, device=device)
+            t_batch = jt.var([t] * batch_size)
             noise = jt.randn_like(x_start)
             x_t = self.q_sample(x_start=x_start, t=t_batch, noise=noise)
             # Calculate VLB term at the current timestep

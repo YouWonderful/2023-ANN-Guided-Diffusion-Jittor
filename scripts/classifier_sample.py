@@ -59,8 +59,7 @@ def main():
             x_in = x.detach()
             logits = classifier(x_in, t)
             log_probs = nn.log_softmax(logits, dim=-1)
-            selected = log_probs[0:len(logits), y.view(-1)]
-            # maybe false
+            selected = log_probs[jt.arange(len(logits)), y.view(-1)]
             return jt.grad(selected.sum(), x_in)[0] * args.classifier_scale
 
     def model_fn(x, t, y=None):
@@ -100,7 +99,9 @@ def main():
     label_arr = np.concatenate(all_labels, axis=0)
     label_arr = label_arr[: args.num_samples]
     shape_str = "x".join([str(x) for x in arr.shape])
-    out_path = os.path.join(logger.get_dir(), f"samples_{shape_str}.npz")
+    if not os.path.exists('./sample/'):
+        os.mkdir('./sample/')
+    out_path = os.path.join('./sample/', f"samples_{shape_str}.npz")
     logger.log(f"saving to {out_path}")
     np.savez(out_path, arr, label_arr)
 
