@@ -5,7 +5,7 @@ datasets/*
 !datasets/README.md
 models
 sample/*
-!sample/sampleToimage.py
+!sample/*.py
 output.txt
 evaluations/VIRTUAL_imagenet256_labeled.npz
 model/

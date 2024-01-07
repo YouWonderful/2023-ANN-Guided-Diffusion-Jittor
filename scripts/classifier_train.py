@@ -10,6 +10,8 @@ import jittor as jt
 import jittor.nn as nn
 from jittor.optim import AdamW
 
+import time
+
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))  # 将父级目录加入执行目录列表
@@ -116,6 +118,7 @@ def main():
             if loss.requires_grad:
                 opt.step(loss * len(sub_batch) / len(batch))
 
+    # warmup = 10
     for step in range(args.iterations - resume_step):
         logger.logkv("step", step + resume_step)
         logger.logkv(
@@ -124,7 +127,18 @@ def main():
         )
         if args.anneal_lr:
             set_annealed_lr(opt, args.lr, (step + resume_step) / args.iterations)
+            
+        # jt.sync_all(True)
+        # for i in range(warmup):
+        #     forward_backward_log(data)
+        
+        # jt.sync_all(True)
+        
+        # start = time.time()
         forward_backward_log(data)
+        # jt.sync_all(True)
+        # end = time.time()
+        # logger.log(f"Jittor time:{(end-start)}")
         mp_trainer.optimize(opt)
         if val_data is not None and not step % args.eval_interval:
             with jt.no_grad():
@@ -176,7 +190,7 @@ def split_microbatches(microbatch, *args):
 
 def create_argparser():
     defaults = dict(
-        data_dir="/root/2023-ann-diffussion-jittor/datasets/tiny-imagenet-200",
+        data_dir="",
         val_data_dir="",
         noised=True,
         iterations=150000,

@@ -39,7 +39,7 @@ class GradualWarmupScheduler(LRScheduler):
                 if not self.finished:
                     self.after_scheduler.base_lrs = [base_lr * self.multiplier for base_lr in self.base_lrs]
                     self.finished = True
-                return self.after_scheduler.get_last_lr()
+                return [self.after_scheduler.get_lr(base_lr, self.after_scheduler.optimizer.lr) for base_lr in self.base_lrs]
             return [base_lr * self.multiplier for base_lr in self.base_lrs]
         return [base_lr * ((self.multiplier - 1.) * self.last_epoch / self.total_epoch + 1.) for base_lr in self.base_lrs]
     def state_dict(self):
@@ -185,7 +185,7 @@ def main():
     # several hyperparameters for model
     parser = argparse.ArgumentParser(description='test for diffusion model')
 
-    parser.add_argument('--batchsize',type=int,default=16,help='batch size per device for training Unet model')
+    parser.add_argument('--batchsize',type=int,default=256,help='batch size per device for training Unet model')
     parser.add_argument('--inch',type=int,default=3,help='input channels for Unet model')
     parser.add_argument('--modch',type=int,default=64,help='model channels for Unet model')
     parser.add_argument('--T',type=int,default=1000,help='timesteps for Unet model')
@@ -202,8 +202,8 @@ def main():
     parser.add_argument('--epoch',type=int,default=1500,help='epochs for training')
     parser.add_argument('--multiplier',type=float,default=2.5,help='multiplier for warmup')
     parser.add_argument('--threshold',type=float,default=0.1,help='threshold for classifier-free guidance')
-    parser.add_argument('--interval',type=int,default=5,help='epoch interval between two evaluations')
-    parser.add_argument('--moddir',type=str,default='model',help='model addresses')
+    parser.add_argument('--interval',type=int,default=10,help='epoch interval between two evaluations')
+    parser.add_argument('--moddir',type=str,default='models',help='model addresses')
     parser.add_argument('--samdir',type=str,default='sample',help='sample addresses')
     parser.add_argument('--genbatch',type=int,default=80,help='batch size for sampling process')
     parser.add_argument('--clsnum',type=int,default=10,help='num of label classes')

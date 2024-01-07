@@ -65,13 +65,13 @@ def discretized_gaussian_log_likelihood(x, *, means, log_scales):
     cdf_plus = approx_standard_normal_cdf(plus_in)
     min_in = inv_stdv * (centered_x - 1.0 / 255.0)
     cdf_min = approx_standard_normal_cdf(min_in)
-    log_cdf_plus = jt.log(cdf_plus.clamp(min=1e-12))
-    log_one_minus_cdf_min = jt.log((1.0 - cdf_min).clamp(min=1e-12))
+    log_cdf_plus = jt.log(cdf_plus.clamp(min_v=1e-12))
+    log_one_minus_cdf_min = jt.log((1.0 - cdf_min).clamp(min_v=1e-12))
     cdf_delta = cdf_plus - cdf_min
     log_probs = jt.where(
         x < -0.999,
         log_cdf_plus,
-        jt.where(x > 0.999, log_one_minus_cdf_min, jt.log(cdf_delta.clamp(min=1e-12))),
+        jt.where(x > 0.999, log_one_minus_cdf_min, jt.log(cdf_delta.clamp(min_v=1e-12))),
     )
     assert log_probs.shape == x.shape
     return log_probs

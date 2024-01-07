@@ -80,7 +80,7 @@ def main():
     # several hyperparameters for models
     parser = argparse.ArgumentParser(description='test for diffusion model')
 
-    parser.add_argument('--genbatch',type=int,default=300,help='batch size for sampling process')
+    parser.add_argument('--genbatch',type=int,default=80,help='batch size for sampling process')
     parser.add_argument('--T',type=int,default=1000,help='timesteps for Unet model')
     parser.add_argument('--dtype',default=jt.float32)
     parser.add_argument('--w',type=float,default=3.0,help='hyperparameters for classifier-free guidance strength')
@@ -88,7 +88,7 @@ def main():
     parser.add_argument('--epoch',type=int,default=1000,help='epochs for loading models')
     parser.add_argument('--cdim',type=int,default=10,help='dimension of conditional embedding')
     parser.add_argument('--label',type=str,default='range',help='labels of generated images')
-    parser.add_argument('--moddir',type=str,default='model',help='model addresses')
+    parser.add_argument('--moddir',type=str,default='models',help='model addresses')
     parser.add_argument('--samdir',type=str,default='sample',help='sample addresses')
     parser.add_argument('--inch',type=int,default=3,help='input channels for Unet model')
     parser.add_argument('--modch',type=int,default=64,help='model channels for Unet model')

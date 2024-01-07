@@ -11,6 +11,7 @@ from .fp16_util import MixedPrecisionTrainer
 from .nn import update_ema
 from .resample import LossAwareSampler, UniformSampler
 
+import time
 # For ImageNet experiments, this was a good default value.
 # We found that the lg_loss_scale quickly climbed to
 # 20-21 within the first ~1K steps of training.
@@ -132,7 +133,15 @@ class TrainLoop:
             self.save()
 
     def run_step(self, batch, cond):
+            
+        # jt.sync_all(True)
+        
+        # start = time.time()
         self.forward_backward(batch, cond)
+        # jt.sync_all(True)
+        # end = time.time()
+        # logger.log(f"Jittor time:{(end-start)}")
+        
         took_step = self.mp_trainer.optimize(self.opt)
         if took_step:
             self._update_ema()
@@ -248,7 +257,7 @@ def find_ema_checkpoint(main_checkpoint, step, rate):
 
 def log_loss_dict(diffusion, ts, losses):
     for key, values in losses.items():
-        logger.logkv_mean(key, values.mean().item())
+        logger.logkv_mean(key, values.mean())
         # Log the quantiles (four quartiles, in particular).
         for sub_t, sub_loss in zip(ts.cpu().numpy(), values.detach().cpu().numpy()):
             quartile = int(4 * sub_t / diffusion.num_timesteps)
