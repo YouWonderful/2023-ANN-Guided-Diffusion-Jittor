@@ -128,6 +128,8 @@ def main():
         if args.anneal_lr:
             set_annealed_lr(opt, args.lr, (step + resume_step) / args.iterations)
             
+        jt.gc()
+            
         # jt.sync_all(True)
         # for i in range(warmup):
         #     forward_backward_log(data)
@@ -147,12 +149,12 @@ def main():
                 model.train()
         if not step % args.log_interval:
             logger.dumpkvs()
-        if (
-            step
-            and not (step + resume_step) % args.save_interval
-        ):
-            logger.log("saving model...")
-            save_model(mp_trainer, opt, step + resume_step)
+        # if (
+        #     step
+        #     and not (step + resume_step) % args.save_interval
+        # ):
+        #     logger.log("saving model...")
+        #     save_model(mp_trainer, opt, step + resume_step)
 
     logger.log("saving model...")
     save_model(mp_trainer, opt, step + resume_step)

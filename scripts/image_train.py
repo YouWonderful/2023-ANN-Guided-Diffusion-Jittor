@@ -3,6 +3,7 @@ Train a diffusion model on images.
 """
 
 import argparse
+import jittor as jt
 
 import sys
 from pathlib import Path
@@ -26,6 +27,7 @@ def main():
 
     logger.configure()
 
+    jt.gc()
     logger.log("creating model and diffusion...")
     model, diffusion = create_model_and_diffusion(
         **args_to_dict(args, model_and_diffusion_defaults().keys())
@@ -41,6 +43,7 @@ def main():
     )
 
     logger.log("training...")
+    jt.gc()
     TrainLoop(
         model=model,
         diffusion=diffusion,
