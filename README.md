@@ -7,6 +7,7 @@
 
 ## Preparation
 * 安装好jittor环境
+* 数据集：[ImageNet](http://www.image-net.org/challenges/LSVRC/2012/downloads)
 * ImageNet 256x256: 预训练模型
     * 256x256 classifier: [256x256_classifier.pt](https://openaipublic.blob.core.windows.net/diffusion/jul-2021/256x256_classifier.pt)
     * 256x256 diffusion: [256x256_diffusion.pt](https://openaipublic.blob.core.windows.net/diffusion/jul-2021/256x256_diffusion.pt)
